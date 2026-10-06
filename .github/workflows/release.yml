@@ -2,13 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: Validate and run npm publish --dry-run without publishing or deploying
-        type: boolean
-        default: true
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
 
 permissions:
   contents: read
@@ -23,7 +17,6 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
       npm_tag: ${{ steps.release.outputs.npm_tag }}
-      dry_run: ${{ steps.release.outputs.dry_run }}
       packages: ${{ steps.release.outputs.packages }}
     steps:
       - uses: actions/checkout@v7
@@ -33,15 +26,16 @@ jobs:
           package-manager-cache: false
       - name: Check package versions, private workspace and release eligibility
         id: release
-        env:
-          RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: node scripts/release.mjs
 
   verify:
     needs: version
     uses: ./.github/workflows/verify.yml
+    with:
+      upload_artifacts: true
 
   publish-npm:
+    # A release runs the full reusable verification workflow for this tag first.
     needs: [version, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -51,7 +45,6 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       NPM_TAG: ${{ needs.version.outputs.npm_tag }}
-      DRY_RUN: ${{ needs.version.outputs.dry_run }}
       PACKAGES: ${{ needs.version.outputs.packages }}
     steps:
       - uses: actions/download-artifact@v8
@@ -70,10 +63,6 @@ jobs:
           for pkg in $PACKAGES; do
             TARBALL="tarballs/pdfextract-$pkg-$VERSION.tgz"
             test -f "$TARBALL"
-            if [ "$DRY_RUN" = "true" ]; then
-              npm publish "$TARBALL" --access public --tag "$NPM_TAG" --dry-run --registry https://registry.npmjs.org
-              continue
-            fi
             STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "https://registry.npmjs.org/@pdfextract%2f$pkg/$VERSION")
             case "$STATUS" in
               200) echo "@pdfextract/$pkg@$VERSION already exists; skipping." ;;
@@ -84,7 +73,7 @@ jobs:
 
   deploy-documentation:
     needs: [version, publish-npm]
-    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' && needs.version.outputs.dry_run != 'true' }}
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -116,7 +105,7 @@ jobs:
 
   deploy-demo:
     needs: [version, publish-npm]
-    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' && needs.version.outputs.dry_run != 'true' }}
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

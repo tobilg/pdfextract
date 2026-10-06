@@ -26,6 +26,8 @@ to a separate Cloudflare Pages project.
 The [release guide](packages/documentation/guides/releasing.md) describes npm trusted
 publishing and the Cloudflare Pages deployment workflow. Exactly three library tarballs
 are published; the documentation workspace is a private static site.
+The [CI notes](.github/README.md) describe the Linux-only shared build/test job,
+acceptance coverage, dependency cache and optional artifact retention.
 
 The host owns authentication, search/indexing, maps, georeferencing and its UI.
 The browser example passes a selected stored full-size **File** to a host callback.

@@ -80,9 +80,10 @@ adding `Content-Encoding: gzip`. Do not add analytics that receives document con
 
 ## Tagged-release deployment
 
-`verify.yml` builds and tests the production site, then uploads the `demo` artifact.
-On a pushed matching `v*` tag, `release.yml` deploys this exact artifact after verification
-and npm publication succeed. Pull requests and manual dry runs do not deploy. The
+`verify.yml` builds and tests the production site, then uploads the `demo` artifact
+when requested by the release workflow or a manual verification run.
+On a pushed matching `vX.X.X` tag, `release.yml` deploys this exact artifact after verification
+and npm publication succeed. Pull requests and manual verification runs do not deploy. The
 documentation and demo have separate Pages projects. Exactly three library packages
 remain in the npm allowlist; both website packages are checked to remain private.
 

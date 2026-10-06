@@ -22,10 +22,14 @@ for (const [index, manifest] of manifests.entries()) {
 }
 const dryRun = process.env.RELEASE_DRY_RUN === 'true';
 if (process.env.GITHUB_REF_TYPE === 'tag') {
+  if (!/^v\d+\.\d+\.\d+$/.test(process.env.GITHUB_REF_NAME ?? ''))
+    throw new Error('Release tags must have the form vX.X.X without a prerelease or suffix');
   if (process.env.GITHUB_REF_NAME !== `v${version}`)
     throw new Error(`Release tag must match v${version}`);
 } else if (!dryRun) {
-  throw new Error('A real release requires a matching v* tag; use RELEASE_DRY_RUN=true locally');
+  throw new Error(
+    'A real release requires a matching vX.X.X tag; use RELEASE_DRY_RUN=true locally',
+  );
 }
 if (!dryRun && manifests.some((m) => !m.license || m.license === 'UNLICENSED'))
   throw new Error(

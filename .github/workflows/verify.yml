@@ -5,22 +5,30 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      upload_artifacts:
+        description: Retain verified npm tarballs and both websites for manual review
+        type: boolean
+        default: false
   workflow_call:
+    inputs:
+      upload_artifacts:
+        description: Retain verified artifacts for the calling release workflow
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: verify-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: verify-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  # Superseded branch/PR checks can stop; tag releases and manual runs must finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch') }}
 
 jobs:
   packages:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    # Share one checkout, dependency install, library build and browser installation.
+    runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       # Builds use locked npm assets and committed fixtures/notices, not source submodules.
@@ -31,13 +39,32 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22.22.2
-          package-manager-cache: false
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build && pnpm typecheck && pnpm lint && pnpm test
-      - run: node --test tests/packaging/filesystem.mjs
-      - run: pnpm assets && pnpm exec playwright install --with-deps chromium firefox webkit
-      - run: pnpm test:e2e
-      - run: pnpm run pack && pnpm test:packed-browser
+      - name: Lint sources
+        run: pnpm lint
+      - name: Build libraries once
+        run: pnpm build
+      - name: Check workspace types
+        run: pnpm typecheck
+      - name: Unit and real PDF/OCR/storage integration tests
+        run: pnpm test
+      - name: Prepare and validate isolated Node and browser consumers
+        run: pnpm assets && pnpm run pack
+      - name: Build documentation and typecheck its examples
+        # The TypeDoc build already fails on documentation validation warnings.
+        run: pnpm --filter @pdfextract/documentation build && pnpm --filter @pdfextract/documentation typecheck
+      - name: Build and typecheck the demo
+        run: pnpm --filter @pdfextract/demo build
+      - name: Install browsers once for all three suites
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Test packed packages in all three browsers
+        run: pnpm test:packed-browser
+      - name: Check documentation links, navigation and search
+        run: pnpm --filter @pdfextract/documentation test
+      - name: Test the production demo in all three browsers
+        run: pnpm --filter @pdfextract/demo test
       - uses: actions/setup-node@v7
         with:
           node-version: 22.12.0
@@ -45,74 +72,41 @@ jobs:
       - name: Plain Node minimum consumer
         run: node scripts/minimum-consumer.mjs
       - name: Upload the verified npm tarballs
-        if: matrix.os == 'ubuntu-latest'
+        if: inputs.upload_artifacts
         uses: actions/upload-artifact@v7
         with:
           name: npm-packages
           path: artifacts/pdfextract-*.tgz
+          if-no-files-found: error
+          compression-level: 0 # Tarballs are already gzip-compressed.
+          retention-days: 7
+      - name: Upload verified documentation
+        if: inputs.upload_artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: documentation
+          path: packages/documentation/dist
+          if-no-files-found: error
+          retention-days: 7
+      - name: Keep the small documentation validation report
+        uses: actions/upload-artifact@v7
+        with:
+          name: documentation-validation
+          path: artifacts/reports/documentation-validation.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload the verified demo
+        if: inputs.upload_artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: demo
+          path: packages/demo/dist
           if-no-files-found: error
           retention-days: 7
       - name: Preserve browser failures
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-${{ matrix.os }}
+          name: playwright-linux
           path: test-results
-          retention-days: 7
-
-  documentation:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 12.4.2
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22.22.2
-          package-manager-cache: false
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:docs
-      - uses: actions/upload-artifact@v7
-        with:
-          name: documentation
-          path: packages/documentation/dist
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@v7
-        with:
-          name: documentation-validation
-          path: artifacts/reports/documentation-validation.json
-          if-no-files-found: error
-          retention-days: 7
-
-  demo:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 12.4.2
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22.22.2
-          package-manager-cache: false
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium firefox webkit
-      - run: pnpm test:demo
-      - uses: actions/upload-artifact@v7
-        with:
-          name: demo
-          path: packages/demo/dist
-          if-no-files-found: error
-          retention-days: 7
-      - name: Preserve demo browser failures
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: demo-playwright
-          path: test-results/demo
           retention-days: 7

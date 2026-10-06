@@ -14,6 +14,13 @@ The workflow structure follows the
 a reusable verification workflow produces tested tarballs and a tested site artifact;
 the release workflow publishes those artifacts without rebuilding them.
 
+Verification uses one Linux job for libraries and both websites, sharing one dependency
+installation, library build and browser installation. Chromium, Firefox and WebKit test
+the packed consumer and production demo; Node 22.22.2 and 22.12.0 test the built packages.
+Ordinary pushes/PRs retain a small validation report and failure traces. Release runs
+request all release artifacts; manual Verify runs can opt in with `upload_artifacts`.
+See the [CI coverage and optimization notes](https://github.com/tobilg/pdfextract/blob/main/.github/README.md).
+
 ## npm trusted publishing
 
 Configure each public package's npm trusted publisher with GitHub owner `tobilg`,
@@ -29,16 +36,19 @@ npm 12.2.0. This publishing-tool version does not change the library runtime min
 provenance is automatic for eligible public repositories/packages. Repository metadata
 in every package points at this GitHub repository.
 
-Align all three public package versions before pushing `v<version>`. Stable releases
-use `latest`; named prereleases use their identifier (for example `beta`); numeric
-prerelease identifiers use `next`. The private documentation version is not a release target.
-Use `workflow_dispatch` with its dry-run option to validate and run `npm publish --dry-run`
-without publication or a Pages deployment. Real releases require a matching version tag.
+Align all three public package versions before pushing a stable tag such as `v1.2.3`.
+The release workflow runs **only** on pushed `vX.X.X` tags. Branch pushes, prerelease
+suffixes and manual dispatch do not start a release. Each release runs the complete
+reusable verification workflow for its own tagged commit; npm publication depends on
+all builds, tests and packed-consumer checks succeeding. Stable releases use `latest`.
+The private website versions are not release targets.
 
 The current package license is `UNLICENSED` pending the owner's decision. Real publication
 is blocked until the approved license is recorded. Complete native canvas notice/provenance
-review and update release documentation before the initial release. Dry-run checks remain
-available. Initial npm package/scope setup is an owner operation, not performed by the workflow.
+review and update release documentation before the initial release. Local eligibility
+checks remain available with `RELEASE_DRY_RUN=true node scripts/release.mjs`; this command
+does not publish. Initial npm package/scope setup is an owner operation, not performed
+by the workflow.
 
 Publication is sequential, core first. Already-published exact versions are skipped after
 a successful registry lookup; only a 404 means absent. Permission/network/server errors
@@ -57,7 +67,7 @@ separate from npm's tokenless trusted publishing.
 
 After a pushed release tag passes CI and npm publication, `release.yml` downloads the
 verified `documentation` artifact and deploys it with pinned Wrangler to the Pages
-production branch. Manual dry runs and pull requests never deploy. The output directory
+production branch. Manual verification runs and pull requests never deploy. The output directory
 is `packages/documentation/dist`; it contains HTML, relative assets and search data,
 with no runtime server or Pages Functions. Keep directory-index resolution enabled.
 
