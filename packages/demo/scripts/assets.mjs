@@ -33,5 +33,5 @@ await cp(
 );
 await writeFile(
   join(notices, 'README.txt'),
-  'Runtime notices: react-LICENSE, react-dom-LICENSE, scheduler-LICENSE, core/ and ocr/.\nCodec/font notices also accompany pdfextract/core/ and pdfextract/ocr/ assets.\nLanguage model provenance: ../pdfextract/languages/MODEL-SOURCES.txt.\nThe pdfextract owner license is unresolved; this is a local prerelease build.\n',
+  'Runtime notices: react-LICENSE, react-dom-LICENSE, scheduler-LICENSE, core/ and ocr/.\nCodec/font notices also accompany pdfextract/core/ and pdfextract/ocr/ assets.\nLanguage model provenance: ../pdfextract/languages/MODEL-SOURCES.txt.\npdfextract itself is MIT-licensed.\n',
 );

@@ -172,9 +172,6 @@ importers:
       '@biomejs/biome':
         specifier: 2.5.15
         version: 2.5.15
-      '@embedpdf/pdfium':
-        specifier: 2.15.1
-        version: 2.15.1
       '@napi-rs/canvas':
         specifier: 0.1.80
         version: 0.1.80
@@ -235,7 +232,7 @@ importers:
       fast-png:
         specifier: 6.4.0
         version: 6.4.0
-    optionalDependencies:
+    devDependencies:
       '@napi-rs/canvas':
         specifier: 0.1.80
         version: 0.1.80
@@ -321,13 +318,13 @@ importers:
       fast-png:
         specifier: 6.4.0
         version: 6.4.0
-      tesseract.js:
-        specifier: 7.0.0
-        version: 7.0.0
     devDependencies:
       '@pdfextract/core':
         specifier: workspace:*
         version: link:../core
+      tesseract.js:
+        specifier: 7.0.0
+        version: 7.0.0
 
   packages/storage:
     devDependencies:
@@ -526,9 +523,6 @@ packages:
 
   '@dabh/diagnostics@2.0.9':
     resolution: {integrity: sha512-R6siwR65Hm+3yfgP7o8DKhNvputQAwfoz9zTc3kyDudnomj2/BcLmD+uGQQPICjuFUp8ounPBU+jmKsocwVVAg==}
-
-  '@embedpdf/pdfium@2.15.1':
-    resolution: {integrity: sha512-qDH4gEkGSQT0iM+07Hpm3LyvoB7PEFbW3Qyk6+LPkEYLJYfHagkHM1OzYlDq2EDOhJRguykTkzdMOT3/w27x5Q==}
 
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
@@ -2492,8 +2486,6 @@ snapshots:
       '@so-ric/colorspace': 1.1.6
       enabled: 2.0.0
       kuler: 2.0.0
-
-  '@embedpdf/pdfium@2.15.1': {}
 
   '@emnapi/runtime@1.11.3':
     dependencies:

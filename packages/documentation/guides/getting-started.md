@@ -13,7 +13,6 @@ can read a file first, then pass its bytes to {@link "@pdfextract/core".openPdf}
 pnpm add @pdfextract/core @pdfextract/ocr @pdfextract/storage
 ```
 
-Until the initial npm release, install the locally prepared `.tgz` files in `artifacts/`.
 The libraries support browser ESM and Node ≥22.12.0. Configure browser workers using
 [self-hosted assets](ocr-and-assets.md) before opening a PDF in a bundled application.
 

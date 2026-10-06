@@ -9,8 +9,7 @@ Tesseract recognizes rasters; core parses the PDF and supplies their page transf
 pnpm add @pdfextract/core @pdfextract/ocr
 ```
 
-Before the first npm release, install the local core and OCR `.tgz` files produced by
-`pnpm pack` in the repository. Supply Tesseract-compatible language models separately.
+Supply Tesseract-compatible language models separately.
 
 ## Usage
 
@@ -59,10 +58,12 @@ Use Tesseract-compatible `eng.traineddata.gz`, `deu.traineddata.gz`, etc. Model 
 are deliberately separate from the tarball. For browsers, copy **all** `dist/assets`
 files and set `workerUrl` to the copied `worker.min.js`, `coreBaseUrl` to its `core/`
 directory, and `languageDataBaseUrl` to your models directory. The patched
-`tesseract.mjs` controller is loaded beside `worker.min.js`. Node defaults to the
-included patched Node controller/worker and installed Tesseract core. Node model,
-worker and core-directory paths may be absolute paths or file URLs; explicit core
-directories use the matching SIMD variant from the supplied directory. No shared-memory/
+`tesseract.mjs` controller is loaded beside `worker.min.js`. The same configuration works
+from a window or a dedicated Web Worker. Node resolves the package's `node` export
+condition and uses the bundled Node controller/worker and the packaged Tesseract core,
+so no `tesseract.js` dependency is installed. Node model, worker and core-directory paths
+may be absolute paths or file URLs. Only the LSTM cores are shipped (baseline, SIMD and
+relaxed-SIMD); the matching variant is chosen at runtime. No shared-memory/
 cross-origin-isolation headers are required.
 
 ## Recognition and errors
@@ -81,6 +82,5 @@ the public provider contract belongs to core. This package does not own PDF hand
 
 ## License
 
-License decision pending: UNLICENSED local prerelease. Tesseract, Leptonica, bundled
-codecs and math licenses are included in `THIRD_PARTY_NOTICES`; model licenses must be
-hosted with separately supplied models. See the repository licensing inventory.
+MIT. Tesseract, Leptonica, bundled codecs and math licenses are included in
+`THIRD_PARTY_NOTICES`; model licenses must be hosted with separately supplied models.

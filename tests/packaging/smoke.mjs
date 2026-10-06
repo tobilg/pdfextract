@@ -48,6 +48,11 @@ const ocr = createTesseractOcr({
 const scan = await openPdf(await readFile(new URL('./scan.pdf', import.meta.url)), { ocr });
 try {
   assert.match((await scan.getStructuredText()).fullText, /RASTER SENTINEL 7429/);
+  // The native canvas is an optional peer the consumer did not install.
+  await assert.rejects(scan.getStructuredText({ ocr: 'always' }), {
+    code: 'OCR_ASSET_UNAVAILABLE',
+    message: /@napi-rs\/canvas/,
+  });
 } finally {
   await scan.close();
   await ocr.close();

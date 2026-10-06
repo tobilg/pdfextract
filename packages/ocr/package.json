@@ -1,33 +1,55 @@
 {
   "name": "@pdfextract/ocr",
   "version": "0.1.0",
+  "description": "Lazy, self-hosted Tesseract OCR provider for @pdfextract/core in browsers and Node.js. No CDN or implicit model downloads.",
+  "keywords": [
+    "pdf",
+    "ocr",
+    "tesseract",
+    "tesseract.js",
+    "wasm",
+    "text-recognition",
+    "browser",
+    "nodejs",
+    "pdfextract"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "tobilg",
+    "url": "https://github.com/tobilg"
+  },
+  "homepage": "https://github.com/tobilg/pdfextract/tree/main/packages/ocr#readme",
+  "bugs": {
+    "url": "https://github.com/tobilg/pdfextract/issues"
+  },
   "type": "module",
-  "license": "UNLICENSED",
   "engines": {
     "node": ">=22.12.0"
   },
   "files": [
     "dist",
     "README.md",
-    "THIRD_PARTY_NOTICES"
+    "THIRD_PARTY_NOTICES",
+    "LICENSE"
   ],
   "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "node": "./dist/index-node.js",
       "default": "./dist/index.js"
     },
     "./assets/*": "./dist/assets/*"
   },
   "dependencies": {
-    "tesseract.js": "7.0.0",
     "fast-png": "6.4.0"
   },
   "peerDependencies": {
     "@pdfextract/core": "^0.1.0"
   },
   "devDependencies": {
-    "@pdfextract/core": "workspace:*"
+    "@pdfextract/core": "workspace:*",
+    "tesseract.js": "7.0.0"
   },
   "repository": {
     "type": "git",

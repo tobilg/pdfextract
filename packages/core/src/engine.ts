@@ -2,11 +2,14 @@
 import type { OpenPdfOptions, PdfInput } from './contracts.js';
 import { checkAbort, PdfExtractError } from './errors.js';
 export interface Runtime {
+  /** Node replaces the default web runtime (window or Web Worker) from its export condition. */
+  platform: 'web' | 'node';
   read(url: URL, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>>;
   canvas?(width: number, height: number): { canvas: any; context: any };
   worker?(base: URL, workerUrl: string): any;
 }
 let runtime: Runtime = {
+  platform: 'web',
   async read(url, signal) {
     const r = await fetch(url, { signal });
     if (!r.ok) throw new Error(`Asset request failed (${r.status}): ${url}`);
@@ -16,14 +19,60 @@ let runtime: Runtime = {
 export function setRuntime(value: Runtime) {
   runtime = value;
 }
-export function createCanvas(width: number, height: number) {
-  if (runtime.canvas) return runtime.canvas(width, height);
+// Web Workers have no document: render with OffscreenCanvas there.
+function webCanvas(width: number, height: number) {
+  if (typeof document === 'undefined') return new OffscreenCanvas(width, height);
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
+  return canvas;
+}
+export function createCanvas(width: number, height: number) {
+  if (runtime.canvas) return runtime.canvas(width, height);
+  const canvas = webCanvas(width, height);
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) throw new PdfExtractError('RESOURCE_LIMIT_EXCEEDED', 'Canvas allocation failed');
   return { canvas, context };
+}
+/** PDF.js canvas factory for documentless Web Workers; its default factory needs a DOM. */
+class OffscreenCanvasFactory {
+  create(width: number, height: number) {
+    if (width <= 0 || height <= 0) throw new Error('Invalid canvas size');
+    const canvas = new OffscreenCanvas(width, height);
+    return { canvas, context: canvas.getContext('2d', { willReadFrequently: true }) };
+  }
+  reset(entry: { canvas: OffscreenCanvas }, width: number, height: number) {
+    if (width <= 0 || height <= 0) throw new Error('Invalid canvas size');
+    entry.canvas.width = width;
+    entry.canvas.height = height;
+  }
+  destroy(entry: { canvas: OffscreenCanvas | null; context: unknown }) {
+    if (entry.canvas) {
+      entry.canvas.width = 0;
+      entry.canvas.height = 0;
+    }
+    entry.canvas = null;
+    entry.context = null;
+  }
+}
+/** SVG transfer-function filters need a DOM; workers render without them, like PDF.js in Node. */
+class NoFilterFactory {
+  addFilter() {
+    return 'none';
+  }
+  addHCMFilter() {
+    return 'none';
+  }
+  addAlphaFilter() {
+    return 'none';
+  }
+  addLuminosityFilter() {
+    return 'none';
+  }
+  addHighlightHCMFilter() {
+    return 'none';
+  }
+  destroy() {}
 }
 export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPdfOptions) {
   const base = new URL(options.assets?.baseUrl ?? './assets/', import.meta.url);
@@ -37,15 +86,13 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
   });
   const workerUrl = String(options.assets?.workerUrl ?? new URL('pdf.worker.mjs', base));
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  const web = runtime.platform === 'web';
+  const dom = web && typeof document !== 'undefined';
   let worker: Worker | undefined;
   let pdfWorker: any;
-  if (typeof window !== 'undefined') {
-    worker = new Worker(workerUrl, { type: 'module' });
-    pdfWorker = new pdfjs.PDFWorker({ port: worker });
-  } else if (runtime.worker) {
-    worker = runtime.worker(base, workerUrl);
-    pdfWorker = new pdfjs.PDFWorker({ port: worker });
-  }
+  if (runtime.worker) worker = runtime.worker(base, workerUrl);
+  else if (typeof Worker !== 'undefined') worker = new Worker(workerUrl, { type: 'module' });
+  if (worker) pdfWorker = new pdfjs.PDFWorker({ port: worker });
   let rejectFatal: (error: unknown) => void;
   let workerFailed = false;
   const fatal = new Promise<never>((_, reject) => {
@@ -56,7 +103,7 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
     workerFailed = true;
     rejectFatal(
       new PdfExtractError('UNSUPPORTED_PDF_FEATURE', 'Engine worker failed to load or execute', {
-        cause: event.message,
+        cause: event.error ?? new Error(event.message),
       }),
     );
   };
@@ -78,13 +125,16 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
     isOffscreenCanvasSupported: false,
     isImageDecoderSupported: false,
     useSystemFonts: false,
-    disableFontFace: typeof window === 'undefined',
+    disableFontFace: !dom,
     cMapUrl: assetPath('cmaps/'),
     cMapPacked: true,
     standardFontDataUrl: assetPath('standard_fonts/'),
     wasmUrl: wasmBase.protocol === 'file:' ? decodeURIComponent(wasmBase.pathname) : wasmBase.href,
     iccUrl: assetPath('iccs/'),
-    useWorkerFetch: typeof window !== 'undefined',
+    useWorkerFetch: web,
+    ...(web && !dom
+      ? { CanvasFactory: OffscreenCanvasFactory, FilterFactory: NoFilterFactory }
+      : {}),
   });
   const abort = () => {
     rejectFatal(new PdfExtractError('ABORTED', 'Open cancelled'));

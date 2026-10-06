@@ -9,9 +9,7 @@ The documentation and React demo workspaces are private static websites. npm rel
 `@pdfextract/core`, `@pdfextract/ocr` and `@pdfextract/storage`; an explicit allowlist in
 `scripts/packages.mjs` prevents either website workspace from being published.
 
-The workflow structure follows the
-[georeferencing project](https://github.com/tobilg/georeferencing/tree/main/.github/workflows):
-a reusable verification workflow produces tested tarballs and a tested site artifact;
+A reusable verification workflow produces tested tarballs and a tested site artifact;
 the release workflow publishes those artifacts without rebuilding them.
 
 Verification uses one Linux job for libraries and both websites, sharing one dependency
@@ -19,7 +17,7 @@ installation, library build and browser installation. Chromium, Firefox and WebK
 the packed consumer and production demo; Node 22.22.2 and 22.12.0 test the built packages.
 Ordinary pushes/PRs retain a small validation report and failure traces. Release runs
 request all release artifacts; manual Verify runs can opt in with `upload_artifacts`.
-See the [CI coverage and optimization notes](https://github.com/tobilg/pdfextract/blob/main/.github/README.md).
+See the [CI coverage and optimization notes](https://github.com/tobilg/pdfextract/blob/main/.github/CI.md).
 
 ## npm trusted publishing
 
@@ -36,19 +34,37 @@ npm 12.2.0. This publishing-tool version does not change the library runtime min
 provenance is automatic for eligible public repositories/packages. Repository metadata
 in every package points at this GitHub repository.
 
-Align all three public package versions before pushing a stable tag such as `v1.2.3`.
+Align package versions before pushing a stable tag such as `v1.2.3`:
+
+```sh
+pnpm version:sync 1.2.3 --dry-run # Preview without writing
+pnpm version:sync 1.2.3           # Set all five packages and internal peer ranges
+pnpm version:check               # Read-only alignment check, also run by CI
+```
+
+Omit the version argument to synchronize to `@pdfextract/core`'s current version.
+Only stable `X.Y.Z` versions are accepted, without a `v` prefix or prerelease suffix.
+The script preserves `workspace:*` dependencies and external dependency versions;
+internal peer ranges become `^X.Y.Z`. With the current workspace links, these metadata
+changes require no lockfile rewrite. No commit, tag or publication is created. Commit
+the manifest changes before creating the matching release tag.
+
 The release workflow runs **only** on pushed `vX.X.X` tags. Branch pushes, prerelease
 suffixes and manual dispatch do not start a release. Each release runs the complete
 reusable verification workflow for its own tagged commit; npm publication depends on
 all builds, tests and packed-consumer checks succeeding. Stable releases use `latest`.
-The private website versions are not release targets.
+The private website versions are synchronized metadata, not npm release targets.
 
-The current package license is `UNLICENSED` pending the owner's decision. Real publication
-is blocked until the approved license is recorded. Complete native canvas notice/provenance
-review and update release documentation before the initial release. Local eligibility
-checks remain available with `RELEASE_DRY_RUN=true node scripts/release.mjs`; this command
-does not publish. Initial npm package/scope setup is an owner operation, not performed
-by the workflow.
+All packages are MIT-licensed; `scripts/release.mjs` refuses to publish a package whose
+license is missing or `UNLICENSED`. Local eligibility checks remain available with
+`RELEASE_DRY_RUN=true node scripts/release.mjs`; this command does not publish.
+
+The **first** version of each package is published manually by the owner, because npm
+only allows configuring a trusted publisher for a package that already exists. Create
+the `pdfextract` npm organization, then publish the verified tarballs from
+`pnpm run pack` (`artifacts/pdfextract-{core,ocr,storage}-X.Y.Z.tgz`), core first, with
+`npm publish <tarball> --access public`. Afterwards configure the trusted publisher for
+each package as described above; later releases use the tag workflow only.
 
 Publication is sequential, core first. Already-published exact versions are skipped after
 a successful registry lookup; only a 404 means absent. Permission/network/server errors

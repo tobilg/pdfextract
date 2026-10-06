@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { expect, it } from 'vitest';
 import { openPdf } from '../../packages/core/dist/index-node.js';
-import { createTesseractOcr } from '../../packages/ocr/dist/index.js';
+import { createTesseractOcr } from '../../packages/ocr/dist/index-node.js';
 
 const raster = {
   width: 32,

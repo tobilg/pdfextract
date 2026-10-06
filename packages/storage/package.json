@@ -1,15 +1,34 @@
 {
   "name": "@pdfextract/storage",
   "version": "0.1.0",
+  "description": "Byte-preserving filesystem and S3 multipart storage adapters for @pdfextract/core extraction results.",
+  "keywords": [
+    "pdf",
+    "storage",
+    "s3",
+    "multipart-upload",
+    "filesystem",
+    "aws-sdk",
+    "pdfextract"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "tobilg",
+    "url": "https://github.com/tobilg"
+  },
+  "homepage": "https://github.com/tobilg/pdfextract/tree/main/packages/storage#readme",
+  "bugs": {
+    "url": "https://github.com/tobilg/pdfextract/issues"
+  },
   "type": "module",
-  "license": "UNLICENSED",
   "engines": {
     "node": ">=22.12.0"
   },
   "files": [
     "dist",
     "README.md",
-    "THIRD_PARTY_NOTICES"
+    "THIRD_PARTY_NOTICES",
+    "LICENSE"
   ],
   "sideEffects": false,
   "exports": {

@@ -70,7 +70,7 @@ model, server runtime, storage binding or permanent browser credential is requir
 React, React DOM, scheduler and the Vite React plugin are MIT-licensed. Vite is MIT;
 its native Rolldown toolchain is already covered by the workspace licensing inventory.
 PDF.js is Apache-2.0; the copied codec/Tesseract/Leptonica/model notices retain their
-upstream terms. The owner's package license remains unresolved (`UNLICENSED`).
+upstream terms. The demo itself is MIT-licensed like the rest of the repository.
 
 The asset audit rejects missing entry assets, more than 20,000 files, or any individual
 file above [Cloudflare Pages' 25 MiB limit](https://developers.cloudflare.com/pages/platform/limits/).
@@ -97,8 +97,8 @@ production branch `main`, and configure these GitHub repository settings:
 | Variable `CLOUDFLARE_DEMO_PAGES_PROJECT` | Optional override for `pdfextract-demo` |
 
 The CI setup follows [Cloudflare's Direct Upload workflow](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/).
-Local commands neither provision nor deploy. Release publication remains gated by the
-owner's unresolved library license and the existing release prerequisites.
+Local commands neither provision nor deploy. The demo deploys only after the tagged
+release has published the npm packages.
 
 ## Validation mapping
 

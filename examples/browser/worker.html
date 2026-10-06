@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>pdfextract Web Worker example</title></head>
+  <body>
+    <main><h1>PDF extraction in a Web Worker</h1><p>The PDF is opened, OCRed and its images exported inside a dedicated module worker.</p>
+      <label>OCR <select id="ocr"><option value="off">off</option><option value="auto">auto</option><option value="always">always</option></select></label>
+      <label>PDF <input id="pdf" type="file" accept="application/pdf"/></label>
+      <p id="status" role="status">Ready.</p>
+      <pre id="text"></pre>
+    </main><script type="module" src="./worker-page.ts"></script>
+  </body>
+</html>

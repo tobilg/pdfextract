@@ -41,6 +41,8 @@ jobs:
           node-version: 22.22.2
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - name: Check aligned package versions and internal peers
+        run: pnpm version:check
       - run: pnpm install --frozen-lockfile
       - name: Lint sources
         run: pnpm lint

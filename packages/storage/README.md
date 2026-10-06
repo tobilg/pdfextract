@@ -11,9 +11,7 @@ pnpm add @pdfextract/core @pdfextract/storage
 pnpm add @aws-sdk/client-s3
 ```
 
-Before the first npm release, install the local core and storage `.tgz` files produced
-by `pnpm pack` in the repository. The filesystem adapter requires Node; keep its imports
-out of browser code.
+The filesystem adapter requires Node; keep its imports out of browser code.
 
 ## Usage
 
@@ -126,4 +124,4 @@ No auth server, cloud resources or production bucket changes are supplied.
 
 ## License
 
-License decision pending: UNLICENSED local prerelease; AWS/Smithy licenses are Apache-2.0.
+MIT. The optional AWS SDK peer and its Smithy dependencies are Apache-2.0.

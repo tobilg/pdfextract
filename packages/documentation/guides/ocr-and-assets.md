@@ -23,7 +23,7 @@ including sibling codecs/fonts/notices. Host separately supplied language models
 ```text
 pdfextract/
   core/          # pdf.mjs, pdf.worker.mjs, png.mjs, wasm/, iccs/, fonts and CMaps
-  ocr/           # tesseract.mjs, worker.min.js, core/ with JS/WASM variants
+  ocr/           # tesseract.mjs, worker.min.js, core/ with LSTM JS/WASM variants
   languages/     # traineddata.gz files and license information
 ```
 
@@ -43,11 +43,17 @@ WASM compilation (`'wasm-unsafe-eval'` where supported). The provider uses direc
 URLs; it does not require a mandatory CDN, hosted extraction service or cross-origin
 isolation headers. Use a single trusted asset origin where practical.
 
+The same asset configuration works inside a dedicated **module** Web Worker
+(`new Worker(url, { type: 'module' })`). There, core starts the PDF.js worker as a nested
+worker and renders full-page OCR (`ocr: 'always'`) with `OffscreenCanvas`; SVG-based
+transfer-function filters are skipped, as in Node. Pass bytes (`ArrayBuffer`) or a `File`
+to the worker.
+
 ## Node assets and failures
 
-Node resolves packaged engine/worker assets automatically. Supply
-`assets.languageDataBaseUrl` as a filesystem path or `file:` URL. An optional
-`coreBaseUrl` can identify a local Tesseract core directory. Use Node's default OCR
+Node resolves packaged engine/worker assets automatically through the packages' `node`
+export condition. Supply `assets.languageDataBaseUrl` as a filesystem path or `file:` URL.
+An optional `coreBaseUrl` can identify a different Tesseract core directory. Use Node's default OCR
 worker rather than the browser `worker.min.js` override shown above.
 
 Worker concurrency defaults to one and is bounded from one to eight. The Tesseract
@@ -56,5 +62,8 @@ raster pixels. Core maps them back into page coordinates. Missing/broken assets 
 with `OCR_ASSET_UNAVAILABLE`; recognition failures use `OCR_FAILED`. Collect mode preserves
 failed regions as partial results, even when another region succeeds.
 
-Only Node full-page OCR (`always`) needs the optional native canvas addon. Native text,
-embedded-image exports and automatic image-region OCR do not load it.
+Only Node full-page OCR (`always`) needs the native canvas addon. It is an optional peer
+dependency of core and is not installed automatically: run `npm install @napi-rs/canvas`
+to enable that mode, otherwise it rejects with `OCR_ASSET_UNAVAILABLE`. Native text,
+embedded-image exports and automatic image-region OCR never load it. Browsers and Web
+Workers use their built-in canvas.

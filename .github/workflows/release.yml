@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.release.outputs.version }}
-      npm_tag: ${{ steps.release.outputs.npm_tag }}
       packages: ${{ steps.release.outputs.packages }}
     steps:
       - uses: actions/checkout@v7
@@ -44,7 +43,6 @@ jobs:
       id-token: write
     env:
       VERSION: ${{ needs.version.outputs.version }}
-      NPM_TAG: ${{ needs.version.outputs.npm_tag }}
       PACKAGES: ${{ needs.version.outputs.packages }}
     steps:
       - uses: actions/download-artifact@v8
@@ -66,7 +64,7 @@ jobs:
             STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "https://registry.npmjs.org/@pdfextract%2f$pkg/$VERSION")
             case "$STATUS" in
               200) echo "@pdfextract/$pkg@$VERSION already exists; skipping." ;;
-              404) npm publish "$TARBALL" --access public --tag "$NPM_TAG" --registry https://registry.npmjs.org ;;
+              404) npm publish "$TARBALL" --access public --registry https://registry.npmjs.org ;;
               *) echo "::error::Registry lookup for $pkg failed with HTTP $STATUS"; exit 1 ;;
             esac
           done

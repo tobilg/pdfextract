@@ -2,6 +2,31 @@ import { readFile } from 'node:fs/promises';
 import { type OcrProvider, openPdf, PdfExtractError } from '@pdfextract/core';
 import { expect, it } from 'vitest';
 
+it('CORE-04: real worker startup failure retains the original diagnostic and allows recovery', async () => {
+  const bytes = await readFile('tests/fixtures/baseline.pdf');
+  const workerUrl = new URL(
+    `data:text/javascript,${encodeURIComponent('throw new Error("worker-startup-sentinel")')}`,
+  );
+  await expect(openPdf(bytes, { assets: { workerUrl } })).rejects.toMatchObject({
+    code: 'UNSUPPORTED_PDF_FEATURE',
+    cause: { name: 'Error', message: 'worker-startup-sentinel', stack: expect.any(String) },
+  });
+  await expect(
+    openPdf(bytes, {
+      assets: { workerUrl: new URL('./missing-pdfextract-worker.mjs', import.meta.url) },
+    }),
+  ).rejects.toMatchObject({
+    code: 'UNSUPPORTED_PDF_FEATURE',
+    cause: { code: 'ERR_MODULE_NOT_FOUND', stack: expect.any(String) },
+  });
+  const pdf = await openPdf(bytes);
+  try {
+    expect((await pdf.getStructuredText()).fullText).toContain('Native café');
+  } finally {
+    await pdf.close();
+  }
+});
+
 it('CORE-04: real password failure/success and failed engine asset load', async () => {
   const bytes = await readFile('tests/fixtures/password.pdf');
   await expect(openPdf(bytes)).rejects.toMatchObject({ code: 'PASSWORD_REQUIRED' });

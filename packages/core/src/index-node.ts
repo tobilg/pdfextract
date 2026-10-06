@@ -2,9 +2,11 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { Worker as NodeWorker } from 'node:worker_threads';
 import { setRuntime } from './engine.js';
+import { PdfExtractError } from './errors.js';
 
 const require = createRequire(import.meta.url);
 setRuntime({
+  platform: 'node',
   worker(base, workerUrl) {
     const worker = new NodeWorker(new URL('node-worker-bootstrap.mjs', base), {
       // Assets are plain ESM: host loaders and CLI-only V8 flags are irrelevant.
@@ -23,7 +25,8 @@ setRuntime({
           listeners.set(listener, wrapper);
           worker.on('message', wrapper);
         } else if (type === 'error') {
-          const wrapper = (error: Error) => listener({ message: error.message } as ErrorEvent);
+          const wrapper = (error: Error) =>
+            listener({ message: error.message, error } as ErrorEvent);
           errors.set(listener, wrapper);
           worker.on('error', wrapper);
         }
@@ -51,7 +54,16 @@ setRuntime({
     return new Uint8Array(await r.arrayBuffer());
   },
   canvas(width, height) {
-    const native = require('@napi-rs/canvas');
+    let native: ReturnType<typeof require>;
+    try {
+      native = require('@napi-rs/canvas');
+    } catch (cause) {
+      throw new PdfExtractError(
+        'OCR_ASSET_UNAVAILABLE',
+        "Full-page OCR (ocr: 'always') in Node needs the optional peer dependency @napi-rs/canvas; install it with `npm install @napi-rs/canvas`",
+        { cause },
+      );
+    }
     const globals = globalThis as unknown as Record<string, unknown>;
     for (const name of ['DOMMatrix', 'ImageData', 'Path2D']) globals[name] ??= native[name];
     const canvas = native.createCanvas(width, height);

@@ -105,7 +105,13 @@ await writeFile(
       types: ['vite/client'],
       noEmit: true,
     },
-    include: ['browser/main.ts', 'browser/demo-storage.ts', 'shared/**/*.ts'],
+    include: [
+      'browser/main.ts',
+      'browser/demo-storage.ts',
+      'browser/worker-page.ts',
+      'browser/extract-worker.ts',
+      'shared/**/*.ts',
+    ],
   }),
 );
 run('pnpm', ['exec', 'tsc', '-p', 'tsconfig.browser.json'], consumer);

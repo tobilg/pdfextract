@@ -10,8 +10,7 @@ copied before worker transfer; output is owned bytes, never a live WASM view.
 pnpm add @pdfextract/core
 ```
 
-Before the first npm release, install the local core `.tgz` produced by `pnpm pack`
-in the repository. OCR and storage are optional, separate packages.
+OCR and storage are optional, separate packages.
 
 ## Usage
 
@@ -105,12 +104,16 @@ copy the entire exported `@pdfextract/core/assets/*` tree and set
 `workerUrl` can override the patched worker; `wasmUrl` identifies a file in the directory
 containing qcms/OpenJPEG assets. Keep sibling files and notices. See the repository
 asset guide for MIME/CSP details. Core does not import AWS or Tesseract implementations.
-Optional `@napi-rs/canvas` is used only for Node full-page OCR (`always`).
+Node full-page OCR (`ocr: 'always'`) renders pages with the optional peer dependency
+`@napi-rs/canvas`; install it only if you need that mode (`npm install @napi-rs/canvas`).
+Without it, `always` rejects with `OCR_ASSET_UNAVAILABLE`.
+The same configuration works in a window or a dedicated module Web Worker; Node is
+selected by the package's `node` export condition, not by runtime global checks.
 
 See the [asset setup guide](../documentation/guides/ocr-and-assets.md) for browser
 hosting and the [storage README](../storage/README.md) to persist exports for later use.
 
 ## License
 
-License decision pending: UNLICENSED local prerelease. Third-party engine/codecs/fonts
-retain their licenses in `THIRD_PARTY_NOTICES` and `dist/assets`.
+MIT. Third-party engine/codecs/fonts retain their licenses in `THIRD_PARTY_NOTICES`
+and `dist/assets`.

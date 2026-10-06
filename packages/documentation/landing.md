@@ -20,9 +20,7 @@ pnpm add @pdfextract/ocr @pdfextract/storage
 pnpm add @aws-sdk/client-s3
 ```
 
-Before the initial npm release, run `pnpm pack` in this repository and install the
-three local `.tgz` files from `artifacts/` instead. Use Node.js ≥22.12.0 or a modern
-browser with ESM support.
+Use Node.js ≥22.12.0 or a modern browser with ESM support.
 
 ## Quick start
 
@@ -83,10 +81,9 @@ store text, full-size images and thumbnails, publish a manifest last, and retrie
 images in a fresh session. To build or serve this documentation website, see the
 [documentation workspace README](README.md).
 
-The host application owns authentication, search/indexing, maps and georeferencing.
+The host application owns authentication, search/indexing and its UI.
 The browser example hands a stored, full-size `File` to a host callback. PDF actions
 and embedded external URLs are not executed.
 
-These are local prerelease packages. The owner's package license is still unresolved;
-native canvas release evidence also needs completion. See the
-[release and deployment guide](guides/releasing.md) before publication.
+All packages are MIT-licensed. Bundled third-party components keep their own licenses,
+listed in each package's `THIRD_PARTY_NOTICES` directory.

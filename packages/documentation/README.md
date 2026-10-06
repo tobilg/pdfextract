@@ -9,9 +9,8 @@ Private TypeDoc website for the three public pdfextract packages. This workspace
 **not published to npm**. Its static `dist/` directory is deployed to Cloudflare Pages
 by `.github/workflows/release.yml` after successful verification and npm publication.
 
-The structure follows the georeferencing documentation workspace: strict source comments,
-handwritten guides, typechecked embedded examples, HTML link/anchor checks, and a real
-browser navigation/search check. TypeDoc 0.28.20 supports the workspace's TypeScript 6.0.3.
+The workspace uses strict source comments, handwritten guides, typechecked embedded
+examples, HTML link/anchor checks, and a real browser navigation/search check. TypeDoc 0.28.20 supports the workspace's TypeScript 6.0.3.
 
 From the repository root:
 
@@ -46,5 +45,5 @@ The built-in static theme provides search and light/dark presentation. Generated
 are ignored; the source configuration, comments, guides and examples are versioned.
 
 See [release setup](guides/releasing.md) for npm OIDC configuration, Cloudflare secrets
-and the host-owned Pages project. Local commands do not deploy. The owner package license
-remains unresolved; this private package uses UNLICENSED consistently with the workspace.
+and the host-owned Pages project. Local commands do not deploy. Like the rest of the
+repository, this private package is MIT-licensed.

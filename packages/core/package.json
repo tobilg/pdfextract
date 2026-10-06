@@ -1,17 +1,41 @@
 {
   "name": "@pdfextract/core",
   "version": "0.1.0",
+  "description": "Whole-PDF text extraction, structured layout and lossless embedded-image export for browsers and Node.js, powered by a self-hosted PDF.js engine.",
+  "keywords": [
+    "pdf",
+    "pdf-extraction",
+    "text-extraction",
+    "image-extraction",
+    "pdfjs",
+    "structured-text",
+    "png",
+    "browser",
+    "nodejs",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "tobilg",
+    "url": "https://github.com/tobilg"
+  },
+  "homepage": "https://github.com/tobilg/pdfextract/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/tobilg/pdfextract/issues"
+  },
   "type": "module",
-  "license": "UNLICENSED",
   "engines": {
     "node": ">=22.12.0"
   },
   "files": [
     "dist",
     "README.md",
-    "THIRD_PARTY_NOTICES"
+    "THIRD_PARTY_NOTICES",
+    "LICENSE"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/index-node.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -23,7 +47,15 @@
   "dependencies": {
     "fast-png": "6.4.0"
   },
-  "optionalDependencies": {
+  "peerDependencies": {
+    "@napi-rs/canvas": "^0.1.80"
+  },
+  "peerDependenciesMeta": {
+    "@napi-rs/canvas": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
     "@napi-rs/canvas": "0.1.80"
   },
   "repository": {

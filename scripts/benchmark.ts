@@ -120,8 +120,11 @@ try {
     rows,
     repeated,
   };
-  await mkdir('docs/benchmarks', { recursive: true });
-  await writeFile('docs/benchmarks/local-baseline.json', `${JSON.stringify(result, null, 2)}\n`);
+  await mkdir('artifacts/benchmarks', { recursive: true });
+  await writeFile(
+    'artifacts/benchmarks/local-baseline.json',
+    `${JSON.stringify(result, null, 2)}\n`,
+  );
   console.log(JSON.stringify(result, null, 2));
 } finally {
   clearInterval(sample);

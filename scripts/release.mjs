@@ -11,8 +11,8 @@ for (const name of ['documentation', 'demo']) {
   if (manifest.private !== true) throw new Error(`The ${name} workspace must be private`);
 }
 const version = manifests[0].version;
-if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version))
-  throw new Error('Release version must be a simple semver without build metadata');
+if (!/^\d+\.\d+\.\d+$/.test(version))
+  throw new Error('Release version must be a stable X.Y.Z version');
 for (const [index, manifest] of manifests.entries()) {
   if (manifest.name !== `@pdfextract/${PUBLIC_PACKAGES[index]}` || manifest.private)
     throw new Error('Unexpected public package identity');
@@ -35,13 +35,9 @@ if (!dryRun && manifests.some((m) => !m.license || m.license === 'UNLICENSED'))
   throw new Error(
     'Owner package license is unresolved. Set the approved license before publishing.',
   );
-const prerelease = version.includes('-');
-const identifier = version.split('-').slice(1).join('-').split('.')[0];
-const tag = prerelease ? (/^[a-zA-Z][\w-]*$/.test(identifier) ? identifier : 'next') : 'latest';
+// Only stable versions are released, so npm's default `latest` dist-tag always applies.
 const result = {
   version,
-  npm_tag: tag,
-  prerelease: String(prerelease),
   dry_run: String(dryRun),
   packages: PUBLIC_PACKAGES.join(' '),
 };

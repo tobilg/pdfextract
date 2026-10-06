@@ -56,7 +56,6 @@ describe('release eligibility before verification/publication', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       version: '1.2.3',
-      npm_tag: 'latest',
       dry_run: 'false',
       packages: 'core ocr storage',
     });
@@ -71,6 +70,13 @@ describe('release eligibility before verification/publication', () => {
       expect(result.stderr).toContain('form vX.X.X');
     },
   );
+
+  test('rejects prerelease package versions even in dry runs', async () => {
+    await update('core', { version: '1.2.3-beta.1' });
+    const result = check('branch', 'main', true);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('stable X.Y.Z');
+  });
 
   test('rejects a well-formed tag for a different version', () => {
     const result = check('tag', 'v1.2.4');

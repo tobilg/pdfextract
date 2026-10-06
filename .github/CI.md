@@ -37,6 +37,8 @@ remain bounded for the large-image and OCR fixtures.
 
 - All Vitest unit/integration tests run, including actual PDF decoding/OCR, image
   reference pixels, lifecycle/limits, filesystem, S3 protocol faults and local S3rver.
+- `pnpm version:check` rejects package version or internal peer-range drift before
+  installation/build work. Use `pnpm version:sync X.Y.Z` to align release metadata.
 - PACK-01/02: all three tarballs install into an isolated consumer; Node/browser
   declarations, module isolation, native extraction and real OCR are checked.
 - PACK-03 and FS-01/02: the packed consumer's Node and filesystem checks run under
@@ -89,6 +91,7 @@ eligibility check, not a publishing workflow.
 With Node 22.22.2 and the installed pnpm:
 
 ```sh
+pnpm version:check
 pnpm install --frozen-lockfile
 pnpm lint
 pnpm build

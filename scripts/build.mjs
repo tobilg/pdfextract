@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { build } from 'vite';
@@ -16,7 +16,9 @@ for (const name of process.argv[2] ? [process.argv[2]] : ['core', 'ocr', 'storag
             filesystem: resolve(dir, 'src/filesystem.ts'),
             s3: resolve(dir, 'src/s3.ts'),
           }
-        : { index: resolve(dir, 'src/index.ts') };
+        : name === 'ocr'
+          ? { index: resolve(dir, 'src/index.ts'), 'index-node': resolve(dir, 'src/index-node.ts') }
+          : { index: resolve(dir, 'src/index.ts') };
   await build({
     configFile: false,
     build: {
@@ -150,31 +152,74 @@ await build({
     },
   },
 });
+// Bundle the Node factory and worker so the published OCR package needs neither tesseract.js
+// nor its 40+ MB tesseract.js-core dependency at runtime. Node 22 always provides fetch.
+async function bundleNode(entry, fileName, transform) {
+  await build({
+    configFile: false,
+    logLevel: 'warn',
+    plugins: [
+      {
+        name: 'pdfextract-tesseract-node',
+        enforce: 'pre',
+        resolveId(id) {
+          if (id === 'node-fetch') return '\0node-fetch';
+          // The worker uses tesseract.js's own feature detection dependency.
+          if (id === 'wasm-feature-detect')
+            return createRequire(require.resolve('tesseract.js')).resolve(id);
+        },
+        load: (id) => (id === '\0node-fetch' ? 'module.exports = globalThis.fetch;' : undefined),
+        transform,
+      },
+    ],
+    ssr: { noExternal: true, target: 'node' },
+    build: {
+      ssr: entry,
+      outDir: resolve('packages/ocr/dist/assets'),
+      emptyOutDir: false,
+      sourcemap: false,
+      minify: false,
+      rollupOptions: { output: { format: 'cjs', entryFileNames: fileName } },
+    },
+  });
+}
 const require = createRequire(import.meta.url);
-const nodeFactory = patchTesseract(
-  await readFile(require.resolve('tesseract.js/src/createWorker.js'), 'utf8'),
-)
-  .replaceAll("require('./", "require('tesseract.js/src/")
-  .replace(
-    '  let worker = spawnWorker(options);',
+const createWorkerPath = require.resolve('tesseract.js/src/createWorker.js');
+await bundleNode(createWorkerPath, 'tesseract-node.cjs', (code, id) => {
+  if (id !== createWorkerPath) return;
+  const anchor = '  let worker = spawnWorker(options);';
+  const patched = patchTesseract(code);
+  if (patched.split(anchor).length !== 2)
+    throw new Error(`Tesseract patch anchor drift: ${anchor}`);
+  return patched.replace(
+    anchor,
     `  for (const field of ['langPath', 'workerPath', 'corePath']) {
     if (options[field]?.startsWith('file:')) options[field] = require('node:url').fileURLToPath(options[field]);
   }
-  let worker = spawnWorker(options);`,
+${anchor}`,
   );
-await writeFile('packages/ocr/dist/assets/tesseract-node.cjs', nodeFactory);
-await cp('packages/ocr/src/node-worker.cjs', 'packages/ocr/dist/assets/node-worker.cjs');
+});
+await bundleNode(resolve('packages/ocr/src/node-worker.cjs'), 'node-worker.cjs');
 await cp('node_modules/tesseract.js/dist/worker.min.js', 'packages/ocr/dist/assets/worker.min.js');
-await cp(
-  resolve(
-    createRequire(require.resolve('tesseract.js/package.json')).resolve(
-      'tesseract.js-core/package.json',
-    ),
-    '..',
+// Recognition always uses OEM 1 (LSTM only), so only the -lstm cores can ever load: the
+// .wasm.js single-file builds for browsers, the .js + .wasm pairs for Node.
+const coreDir = resolve(
+  createRequire(require.resolve('tesseract.js/package.json')).resolve(
+    'tesseract.js-core/package.json',
   ),
-  'packages/ocr/dist/assets/core',
-  { recursive: true },
+  '..',
 );
+await mkdir('packages/ocr/dist/assets/core', { recursive: true });
+const coreFiles = (await readdir(coreDir)).filter(
+  (file) =>
+    file === 'LICENSE' ||
+    /^tesseract-core(-simd|-relaxedsimd)?-lstm\.(js|wasm|wasm\.js)$/.test(file),
+);
+if (coreFiles.length !== 10) throw new Error(`Unexpected tesseract.js-core files: ${coreFiles}`);
+for (const file of coreFiles)
+  await cp(resolve(coreDir, file), `packages/ocr/dist/assets/core/${file}`);
+// The Emscripten .js cores are CommonJS; the OCR package itself is "type": "module".
+await writeFile('packages/ocr/dist/assets/core/package.json', '{ "type": "commonjs" }\n');
 console.log(
   'Built three packages, declarations, PDF.js worker/codecs/fonts and OCR worker/core assets.',
 );

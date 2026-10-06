@@ -1,21 +1,6 @@
-[submodule "vendor/pdfjs"]
-	path = vendor/pdfjs
-	url = https://github.com/mozilla/pdf.js.git
-[submodule "vendor/tesseract.js"]
-	path = vendor/tesseract.js
-	url = https://github.com/naptha/tesseract.js.git
-[submodule "vendor/aws-sdk-js-v3"]
-	path = vendor/aws-sdk-js-v3
-	url = https://github.com/aws/aws-sdk-js-v3.git
-[submodule "vendor/s3rver"]
-	path = vendor/s3rver
-	url = https://github.com/jamhall/s3rver.git
 [submodule "vendor/icc-profiles"]
 	path = vendor/icc-profiles
 	url = https://github.com/saucecontrol/Compact-ICC-Profiles.git
 [submodule "vendor/tesseract.js-core"]
 	path = vendor/tesseract.js-core
 	url = https://github.com/naptha/tesseract.js-core.git
-[submodule "vendor/canvas"]
-	path = vendor/canvas
-	url = https://github.com/Brooooooklyn/canvas.git
