@@ -44,6 +44,7 @@
   ],
   "treatWarningsAsErrors": true,
   "navigationLinks": {
+    "Demo": "https://pdfextract-demo.gh.tobilg.com",
     "GitHub": "https://github.com/tobilg/pdfextract",
     "npm": "https://www.npmjs.com/package/@pdfextract/core"
   },

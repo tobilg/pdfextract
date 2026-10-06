@@ -8,6 +8,8 @@ Whole-PDF text extraction, embedded raster export, optional OCR and byte-preserv
 storage for browsers and Node.js **≥22.12.0**. Everything runs locally: no hosted
 extraction service, CDN or model download is used, and nothing starts a worker on import.
 
+**[Try the live demo](https://pdfextract-demo.gh.tobilg.com)** · **[API documentation](https://pdfextract-api-docs.gh.tobilg.com)**
+
 | Package | Purpose |
 | --- | --- |
 | [`@pdfextract/core`](packages/core/README.md) | `openPdf`: structured text with coordinates, embedded-image inventory and lossless PNG export |
@@ -47,7 +49,7 @@ Node works without configuration. Browser bundlers and Web Workers must serve th
 packaged engine, worker and OCR assets themselves; see the
 [asset setup guide](packages/documentation/guides/ocr-and-assets.md).
 
-More documentation:
+More documentation (also on the [documentation site](https://pdfextract-api-docs.gh.tobilg.com)):
 
 - [Getting started](packages/documentation/guides/getting-started.md)
 - [OCR and self-hosted assets](packages/documentation/guides/ocr-and-assets.md)
@@ -110,7 +112,9 @@ workflow.
 - `@pdfextract/demo` (private) is a React app that inspects PDFs entirely in browser
   memory: `pnpm demo:dev` at http://127.0.0.1:4176/ or `pnpm test:demo`.
 
-Tagged releases deploy both sites to Cloudflare Pages.
+Tagged releases deploy both sites to Cloudflare Pages: the
+[documentation](https://pdfextract-api-docs.gh.tobilg.com) and the
+[demo](https://pdfextract-demo.gh.tobilg.com).
 
 ### Verification
 
