@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Validate and run npm publish --dry-run without publishing or deploying
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      npm_tag: ${{ steps.release.outputs.npm_tag }}
+      dry_run: ${{ steps.release.outputs.dry_run }}
+      packages: ${{ steps.release.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+      - name: Check package versions, private workspace and release eligibility
+        id: release
+        env:
+          RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: node scripts/release.mjs
+
+  verify:
+    needs: version
+    uses: ./.github/workflows/verify.yml
+
+  publish-npm:
+    needs: [version, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      NPM_TAG: ${{ needs.version.outputs.npm_tag }}
+      DRY_RUN: ${{ needs.version.outputs.dry_run }}
+      PACKAGES: ${{ needs.version.outputs.packages }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm-packages
+          path: tarballs
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+      - name: Install pinned OIDC-capable npm
+        run: npm install --global npm@12.2.0 && npm --version
+      - name: Publish the exact verified tarballs using trusted publishing
+        shell: bash
+        run: |
+          for pkg in $PACKAGES; do
+            TARBALL="tarballs/pdfextract-$pkg-$VERSION.tgz"
+            test -f "$TARBALL"
+            if [ "$DRY_RUN" = "true" ]; then
+              npm publish "$TARBALL" --access public --tag "$NPM_TAG" --dry-run --registry https://registry.npmjs.org
+              continue
+            fi
+            STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "https://registry.npmjs.org/@pdfextract%2f$pkg/$VERSION")
+            case "$STATUS" in
+              200) echo "@pdfextract/$pkg@$VERSION already exists; skipping." ;;
+              404) npm publish "$TARBALL" --access public --tag "$NPM_TAG" --registry https://registry.npmjs.org ;;
+              *) echo "::error::Registry lookup for $pkg failed with HTTP $STATUS"; exit 1 ;;
+            esac
+          done
+
+  deploy-documentation:
+    needs: [version, publish-npm]
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' && needs.version.outputs.dry_run != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: documentation
+          path: site
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+      - name: Check host-provided Pages credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo '::error::Missing CLOUDFLARE_API_TOKEN'; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo '::error::Missing CLOUDFLARE_ACCOUNT_ID'; exit 1; }
+      - name: Deploy the verified static site to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.147.0'
+          command: pages deploy site --project-name ${{ vars.CLOUDFLARE_PAGES_PROJECT || 'pdfextract-api-docs' }} --branch main --commit-hash ${{ github.sha }}
+
+  deploy-demo:
+    needs: [version, publish-npm]
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' && needs.version.outputs.dry_run != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: demo
+          path: site
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+      - name: Check host-provided Pages credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo '::error::Missing CLOUDFLARE_API_TOKEN'; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo '::error::Missing CLOUDFLARE_ACCOUNT_ID'; exit 1; }
+      - name: Deploy the verified React demo to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.147.0'
+          command: pages deploy site --project-name ${{ vars.CLOUDFLARE_DEMO_PAGES_PROJECT || 'pdfextract-demo' }} --branch main --commit-hash ${{ github.sha }}

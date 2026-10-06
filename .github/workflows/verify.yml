@@ -1,0 +1,118 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  packages:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      # Builds use locked npm assets and committed fixtures/notices, not source submodules.
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build && pnpm typecheck && pnpm lint && pnpm test
+      - run: node --test tests/packaging/filesystem.mjs
+      - run: pnpm assets && pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm test:e2e
+      - run: pnpm run pack && pnpm test:packed-browser
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.12.0
+          package-manager-cache: false
+      - name: Plain Node minimum consumer
+        run: node scripts/minimum-consumer.mjs
+      - name: Upload the verified npm tarballs
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-packages
+          path: artifacts/pdfextract-*.tgz
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve browser failures
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-${{ matrix.os }}
+          path: test-results
+          retention-days: 7
+
+  documentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:docs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: documentation
+          path: packages/documentation/dist
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: documentation-validation
+          path: artifacts/reports/documentation-validation.json
+          if-no-files-found: error
+          retention-days: 7
+
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm test:demo
+      - uses: actions/upload-artifact@v7
+        with:
+          name: demo
+          path: packages/demo/dist
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve demo browser failures
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: demo-playwright
+          path: test-results/demo
+          retention-days: 7

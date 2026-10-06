@@ -1,0 +1,56 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "pdfextract API",
+  "entryPoints": [
+    "../core/src/index.ts",
+    "../ocr/src/index.ts",
+    "../storage/src/index.ts",
+    "../storage/src/filesystem.ts",
+    "../storage/src/s3.ts"
+  ],
+  "entryPointStrategy": "resolve",
+  "tsconfig": "tsconfig.api.json",
+  "router": "structure-dir",
+  "out": "dist",
+  "readme": "landing.md",
+  "plugin": ["./scripts/package-readmes.mjs"],
+  "projectDocuments": [
+    "guides/getting-started.md",
+    "guides/ocr-and-assets.md",
+    "guides/storage.md",
+    "guides/coordinates-and-limits.md",
+    "README.md",
+    "guides/releasing.md"
+  ],
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "validation": { "notDocumented": true, "invalidLink": true, "notExported": true },
+  "requiredToBeDocumented": [
+    "Module",
+    "Namespace",
+    "Enum",
+    "EnumMember",
+    "Variable",
+    "Function",
+    "Class",
+    "Interface",
+    "Constructor",
+    "Property",
+    "Method",
+    "Accessor",
+    "TypeAlias"
+  ],
+  "treatWarningsAsErrors": true,
+  "navigationLinks": {
+    "GitHub": "https://github.com/tobilg/pdfextract",
+    "npm": "https://www.npmjs.com/package/@pdfextract/core"
+  },
+  "sourceLinkTemplate": "https://github.com/tobilg/pdfextract/blob/main/{path}#L{line}",
+  "disableGit": true,
+  "basePath": "../..",
+  "displayBasePath": "../..",
+  "groupOrder": ["Guides", "@pdfextract/core", "@pdfextract/ocr", "@pdfextract/storage", "*"],
+  "navigation": { "includeFolders": true, "includeGroups": true, "includeCategories": false }
+}

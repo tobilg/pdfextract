@@ -1,0 +1,7 @@
+packages:
+  - packages/*
+minimumReleaseAge: 0
+allowBuilds:
+  esbuild: true
+  tesseract.js: false
+  workerd: true

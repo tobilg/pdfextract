@@ -1,0 +1,54 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #162c37;
+  background: #f6f7f4;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 960px;
+  margin: 3rem auto;
+  padding: 0 1.5rem;
+}
+h1 {
+  font-size: 2rem;
+}
+label {
+  display: block;
+  margin: 1rem 0;
+}
+button,
+input {
+  font: inherit;
+}
+button {
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+  background: white;
+  border: 1px solid #82949b;
+  border-radius: 4px;
+}
+#status {
+  min-height: 2rem;
+}
+#text {
+  white-space: pre-wrap;
+  padding: 1rem;
+  background: white;
+}
+#gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+#gallery button {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 340px;
+}
+#gallery img {
+  max-width: 320px;
+  max-height: 240px;
+  object-fit: contain;
+}

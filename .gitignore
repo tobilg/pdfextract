@@ -147,3 +147,21 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+.DS_Store
+plans/
+
+# Local documentation
+/docs/
+
+# pdfextract generated local outputs
+artifacts/
+test-results/
+playwright-report/
+pdf-assets/
+examples/browser/public/pdfextract/
+packages/demo/public/pdfextract/
+packages/demo/public/notices/
+.wrangler/
+.dev.vars
+.dev.vars.*

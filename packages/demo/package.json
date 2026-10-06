@@ -1,0 +1,35 @@
+{
+  "name": "@pdfextract/demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "assets": "node scripts/assets.mjs",
+    "dev": "pnpm assets && vite --host 127.0.0.1 --port 4176 --strictPort",
+    "build": "pnpm assets && tsc --noEmit && vite build && node scripts/check-assets.mjs",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview --host 127.0.0.1 --port 4176 --strictPort",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@pdfextract/core": "workspace:*",
+    "@pdfextract/ocr": "workspace:*",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.19.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "fast-png": "6.4.0",
+    "typescript": "6.0.3",
+    "vite": "8.3.3",
+    "wrangler": "4.147.0"
+  }
+}

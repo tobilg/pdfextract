@@ -1,0 +1,50 @@
+{
+  "name": "@pdfextract/storage",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "THIRD_PARTY_NOTICES"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./filesystem": {
+      "types": "./dist/filesystem.d.ts",
+      "default": "./dist/filesystem.js"
+    },
+    "./s3": {
+      "types": "./dist/s3.d.ts",
+      "default": "./dist/s3.js"
+    }
+  },
+  "peerDependencies": {
+    "@pdfextract/core": "^0.1.0",
+    "@aws-sdk/client-s3": "^3.1146.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-s3": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@pdfextract/core": "workspace:*",
+    "@aws-sdk/client-s3": "3.1146.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tobilg/pdfextract.git",
+    "directory": "packages/storage"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,13 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+/pdfextract/*.mjs
+  Content-Type: text/javascript; charset=utf-8
+
+/pdfextract/*.wasm
+  Content-Type: application/wasm
+
+/pdfextract/languages/*.traineddata.gz
+  Content-Type: application/gzip

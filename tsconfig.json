@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "noEmit": true
+  },
+  "include": ["packages/*/src/**/*.ts", "examples/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["vendor", "node_modules", "**/dist", "packages/core/src/engine-extension.js"]
+}

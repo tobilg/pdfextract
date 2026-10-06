@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>pdfextract integration example</title></head>
+  <body>
+    <main><h1>PDF extraction</h1><p>Choose a whole PDF, then select one of its embedded images. Full exports keep their native dimensions.</p>
+      <label>PDF <input id="pdf" type="file" accept="application/pdf"/></label>
+      <label><input id="ocr" type="checkbox"/> Recognize image text (local English/German models)</label>
+      <button id="cancel" type="button">Cancel</button>
+      <p id="status" role="status">Ready. Results use local browser storage unless the host supplies S3 configuration.</p>
+      <label>Stored manifest key <input id="manifest" type="text" size="55"/></label><button id="load" type="button">Load stored extraction</button>
+      <pre id="text"></pre><div id="gallery"></div><p id="selected" role="status"></p>
+    </main><script type="module" src="./main.ts"></script>
+  </body>
+</html>
