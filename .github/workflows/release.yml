@@ -49,15 +49,17 @@ jobs:
         with:
           name: npm-packages
           path: tarballs
+      # Publishing runs no package code, so it can use the latest Node 24, whose bundled
+      # npm (>= 11.5.1) supports trusted publishing without upgrading npm in place.
       - uses: actions/setup-node@v7
         with:
-          node-version: 22.22.2
+          node-version: 24
+          check-latest: true
           package-manager-cache: false
-      - name: Install pinned OIDC-capable npm
-        run: npm install --global npm@12.2.0 && npm --version
       - name: Publish the exact verified tarballs using trusted publishing
         shell: bash
         run: |
+          node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) throw new Error(`npm ${process.argv[1]} lacks trusted publishing`)' "$(npm --version)"
           for pkg in $PACKAGES; do
             TARBALL="tarballs/pdfextract-$pkg-$VERSION.tgz"
             test -f "$TARBALL"

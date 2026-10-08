@@ -28,9 +28,10 @@ permission in npm's current settings. No `NPM_TOKEN` or `NODE_AUTH_TOKEN` secret
 See [npm's setup instructions](https://docs.npmjs.com/trusted-publishers/) for package
 registration, publisher setup and any expiry requirements.
 
-The publishing job uses GitHub-hosted Ubuntu, `id-token: write`, Node 22.22.2 and pinned
-npm 12.2.0. This publishing-tool version does not change the library runtime minimum of
-22.12.0. npm exchanges GitHub's OIDC identity for short-lived publishing credentials;
+The publishing job uses GitHub-hosted Ubuntu, `id-token: write` and the latest Node 24
+with its bundled npm (trusted publishing needs npm 11.5.1 or newer; the job checks this).
+It only uploads the already verified tarballs, so this does not change the library runtime
+minimum of 22.12.0, which verification tests. npm exchanges GitHub's OIDC identity for short-lived publishing credentials;
 provenance is automatic for eligible public repositories/packages. Repository metadata
 in every package points at this GitHub repository.
 
