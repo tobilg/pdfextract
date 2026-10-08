@@ -61,7 +61,8 @@ jobs:
         run: |
           node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) throw new Error(`npm ${process.argv[1]} lacks trusted publishing`)' "$(npm --version)"
           for pkg in $PACKAGES; do
-            TARBALL="tarballs/pdfextract-$pkg-$VERSION.tgz"
+            # The ./ prefix matters: npm reads "dir/file.tgz" as a GitHub "user/repo" spec.
+            TARBALL="./tarballs/pdfextract-$pkg-$VERSION.tgz"
             test -f "$TARBALL"
             STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "https://registry.npmjs.org/@pdfextract%2f$pkg/$VERSION")
             case "$STATUS" in

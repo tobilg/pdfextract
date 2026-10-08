@@ -64,7 +64,8 @@ The **first** version of each package is published manually by the owner, becaus
 only allows configuring a trusted publisher for a package that already exists. Create
 the `pdfextract` npm organization, then publish the verified tarballs from
 `pnpm run pack` (`artifacts/pdfextract-{core,ocr,storage}-X.Y.Z.tgz`), core first, with
-`npm publish <tarball> --access public`. Afterwards configure the trusted publisher for
+`npm publish ./artifacts/pdfextract-core-X.Y.Z.tgz --access public`. Keep the leading `./`:
+without it, npm reads `artifacts/…` as a GitHub repository and fails. Afterwards configure the trusted publisher for
 each package as described above; later releases use the tag workflow only.
 
 Publication is sequential, core first. Already-published exact versions are skipped after
