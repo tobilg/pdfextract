@@ -41,9 +41,11 @@ and WebKit, without Vite transforms or workspace source aliases.
 - Reads a whole File and shows native/OCR text, page dimensions, blocks, lines, span
   geometry, provenance, confidence, warnings and page JSON. Download full structured
   JSON or plain text.
+- Optional minimum image width/height (pixels) skips smaller images; the result summary
+  shows how many were ignored. Empty fields list every image.
 - Lists embedded raster appearances and their distinct placements. Eight thumbnails
   are decoded sequentially per gallery page. Downloading an image requests a separate
-  full-resolution PNG with its native dimensions and appearance.
+  full-resolution PNG at its native resolution, oriented as it appears on the page.
 - Reports extraction/export progress, supports cancellation and invalid/password/
   limit errors, and closes document and OCR workers when clearing, replacing or leaving
   the page. Thumbnail and download object URLs are revoked.

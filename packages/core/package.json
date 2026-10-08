@@ -1,6 +1,6 @@
 {
   "name": "@pdfextract/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Whole-PDF text extraction, structured layout and lossless embedded-image export for browsers and Node.js, powered by a self-hosted PDF.js engine.",
   "keywords": [
     "pdf",

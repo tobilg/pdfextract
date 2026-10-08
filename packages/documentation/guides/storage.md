@@ -63,8 +63,9 @@ The default integration backend is MIT-licensed S3rver; production endpoint chec
 
 The [shared runnable workflow](https://github.com/tobilg/pdfextract/blob/main/examples/shared/persistence.ts)
 uses a fresh UUID prefix, optionally stores the source, then stores text JSON/plain text,
-each full PNG and a separate thumbnail. It validates and publishes a manifest only after
-every referenced asset succeeds. Failure cleans up owned keys or reports orphans and uncertain
+each full PNG and a separate thumbnail. An optional `minWidth`/`minHeight` skips smaller
+images; the manifest's `ignoredImageCount` records how many. It validates and publishes a
+manifest only after every referenced asset succeeds. Failure cleans up owned keys or reports orphans and uncertain
 commits. Manifest-last is not a transaction for overwriting an existing extraction.
 
 Fresh sessions read the manifest and thumbnails directly from storage. Selection retrieves

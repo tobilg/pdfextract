@@ -66,6 +66,8 @@ export function App() {
   const [ocrMode, setOcrMode] = useState<SessionOptions['ocrMode']>('auto');
   const [language, setLanguage] = useState('eng');
   const [password, setPassword] = useState('');
+  const [minWidth, setMinWidth] = useState('');
+  const [minHeight, setMinHeight] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
   const [view, setView] = useState<'text' | 'structure' | 'json'>('text');
   const download = useDownloads();
@@ -114,7 +116,15 @@ export function App() {
       await previous?.close();
       if (session.current !== next) return;
       const output = await next.extract(
-        { ocr, ocrMode, language, password, ...overrides },
+        {
+          ocr,
+          ocrMode,
+          language,
+          password,
+          minWidth: pixels(minWidth),
+          minHeight: pixels(minHeight),
+          ...overrides,
+        },
         (event) => {
           if (session.current !== next) return;
           setProgress(event);
@@ -225,6 +235,36 @@ export function App() {
                   </select>
                 </label>
               )}
+              <fieldset className="size-filter">
+                <legend>
+                  Minimum image size <span className="muted">(optional, pixels)</span>
+                </legend>
+                <label>
+                  <span className="sr-only">Minimum image width</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    inputMode="numeric"
+                    value={minWidth}
+                    placeholder="Width"
+                    onChange={(event) => setMinWidth(event.target.value)}
+                  />
+                </label>
+                <span aria-hidden="true">×</span>
+                <label>
+                  <span className="sr-only">Minimum image height</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    inputMode="numeric"
+                    value={minHeight}
+                    placeholder="Height"
+                    onChange={(event) => setMinHeight(event.target.value)}
+                  />
+                </label>
+              </fieldset>
               <label>
                 Password <span className="muted">(optional)</span>
                 <input
@@ -317,6 +357,12 @@ export function App() {
               <span>
                 {result.images.length} embedded {result.images.length === 1 ? 'image' : 'images'}
               </span>
+              {result.ignoredImages > 0 && (
+                <span>
+                  {result.ignoredImages} smaller {result.ignoredImages === 1 ? 'image' : 'images'}{' '}
+                  ignored
+                </span>
+              )}
               <span>
                 {result.text.pages
                   .reduce((count, entry) => count + entry.fullText.length, 0)
@@ -439,7 +485,11 @@ export function App() {
                   </div>
                 )}
               </section>
-              <Images session={session.current} images={result.images} />
+              <Images
+                session={session.current}
+                images={result.images}
+                ignored={result.ignoredImages}
+              />
             </div>
           </>
         ) : (
@@ -506,7 +556,32 @@ function Structure({ page }: { page: TextPage }) {
 }
 
 const PAGE_SIZE = 8;
-function Images({ session, images }: { session: PdfSession; images: readonly EmbeddedImage[] }) {
+/** A positive whole number of pixels from a size input; anything else means no filter. */
+function pixels(value: string) {
+  const number = Number(value);
+  return value.trim() && Number.isSafeInteger(number) && number > 0 ? number : undefined;
+}
+
+/** Size and orientation as shown on the page; exports correct the first placement's orientation. */
+function displayed(image: EmbeddedImage) {
+  const orientation = image.occurrences[0]?.originalOrientation;
+  const quarterTurn = orientation?.rotation === 90 || orientation?.rotation === 270;
+  return {
+    width: quarterTurn ? image.height : image.width,
+    height: quarterTurn ? image.width : image.height,
+    corrected: !!orientation && (orientation.rotation !== 0 || orientation.mirrored),
+  };
+}
+
+function Images({
+  session,
+  images,
+  ignored,
+}: {
+  session: PdfSession;
+  images: readonly EmbeddedImage[];
+  ignored: number;
+}) {
   const [offset, setOffset] = useState(0);
   const visible = useMemo(() => images.slice(offset, offset + PAGE_SIZE), [images, offset]);
   // Remount the gallery when the document changes, including its current-page URLs.
@@ -517,7 +592,9 @@ function Images({ session, images }: { session: PdfSession; images: readonly Emb
           Embedded images <span className="count">{images.length}</span>
         </h2>
       </div>
-      <p className="muted">Thumbnails for browsing. Downloads preserve native dimensions.</p>
+      <p className="muted">
+        Thumbnails for browsing. Downloads keep full resolution, oriented as on the page.
+      </p>
       {images.length ? (
         <>
           <ThumbnailPage
@@ -546,6 +623,11 @@ function Images({ session, images }: { session: PdfSession; images: readonly Emb
             </button>
           </div>
         </>
+      ) : ignored ? (
+        <p className="empty-message">
+          All {ignored} embedded {ignored === 1 ? 'image is' : 'images are'} smaller than the
+          minimum image size.
+        </p>
       ) : (
         <p className="empty-message">
           This PDF has no embedded raster images. Vector artwork and page screenshots are not listed
@@ -632,8 +714,8 @@ function ThumbnailPage({
                 <img
                   src={previews[image.id]}
                   alt={`Embedded raster ${offset + index + 1}`}
-                  width={image.width}
-                  height={image.height}
+                  width={displayed(image).width}
+                  height={displayed(image).height}
                 />
               ) : (
                 <span>{errors[image.id] ? 'Preview unavailable' : 'Preparing thumbnail…'}</span>
@@ -642,7 +724,7 @@ function ThumbnailPage({
             <div className="image-info">
               <h3>Image {offset + index + 1}</h3>
               <strong>
-                {image.width} × {image.height} px
+                {displayed(image).width} × {displayed(image).height} px
               </strong>
               <p>
                 Page
@@ -655,6 +737,7 @@ function ThumbnailPage({
                 · {image.occurrences.length}{' '}
                 {image.occurrences.length === 1 ? 'placement' : 'placements'}
                 {image.hasAlpha ? ' · alpha' : ''}
+                {displayed(image).corrected ? ' · orientation corrected' : ''}
               </p>
               <details>
                 <summary>Placement details</summary>

@@ -1,4 +1,4 @@
-import type { AffineTransform, Box, TextBlock, TextSpan } from './contracts.js';
+import type { AffineTransform, Box, ImageOrientation, TextBlock, TextSpan } from './contracts.js';
 export function multiply(m: readonly number[], n: readonly number[]): AffineTransform {
   return [
     m[0] * n[0] + m[2] * n[1],
@@ -112,4 +112,50 @@ export function layout(spans: TextSpan[]): TextBlock[] {
     }
   }
   return blocks;
+}
+
+/** Orientation of a stored raster relative to a placement, from its raster-to-page transform. */
+export function orientationOf(imageToPage: AffineTransform): ImageOrientation {
+  const [a, b, c, d] = imageToPage;
+  const mirrored = a * d - b * c < 0;
+  // Page y points down, so atan2 measures clockwise. A mirrored raster's x axis starts at 180°.
+  const angle = (Math.atan2(b, a) * 180) / Math.PI - (mirrored ? 180 : 0);
+  const rotation = (((Math.round(angle / 90) * 90) % 360) + 360) % 360;
+  return { rotation: rotation as ImageOrientation['rotation'], mirrored };
+}
+/**
+ * Maps stored raster pixel edges to the upright raster that displays `orientation` as on the page.
+ * The linear part sends the raster's x and y axes to axis-aligned unit vectors.
+ */
+export function orientationTransform(
+  { rotation, mirrored }: ImageOrientation,
+  width: number,
+  height: number,
+): AffineTransform {
+  let x = [mirrored ? -1 : 1, 0],
+    y = [0, 1];
+  // A clockwise quarter turn in y-down coordinates maps (u, v) to (-v, u).
+  for (let turn = 0; turn < rotation / 90; turn++) {
+    x = [-x[1], x[0]];
+    y = [-y[1], y[0]];
+  }
+  return [
+    x[0],
+    x[1],
+    y[0],
+    y[1],
+    Math.max(0, -x[0]) * width + Math.max(0, -y[0]) * height,
+    Math.max(0, -x[1]) * width + Math.max(0, -y[1]) * height,
+  ];
+}
+export function invert(m: AffineTransform): AffineTransform {
+  const det = m[0] * m[3] - m[1] * m[2];
+  return [
+    m[3] / det,
+    -m[1] / det,
+    -m[2] / det,
+    m[0] / det,
+    (m[2] * m[5] - m[3] * m[4]) / det,
+    (m[1] * m[4] - m[0] * m[5]) / det,
+  ];
 }

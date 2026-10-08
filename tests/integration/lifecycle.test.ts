@@ -93,7 +93,8 @@ it('OCR-03/04: repeated occurrences survive merging and rotated image geometry i
     expect(result.fullText.match(/SENTINEL/g)).toHaveLength(2);
     const spans = result.pages[0].blocks.flatMap((b) => b.lines.flatMap((l) => l.spans));
     expect(spans.map((s) => s.bbox)).toContainEqual({ x: 45, y: 155, width: 30, height: 7.5 });
-    expect(spans.map((s) => s.bbox)).toContainEqual({ x: 355, y: 355, width: 7.5, height: 30 });
+    // The rotated placement is OCRed upright, so the provider's horizontal box stays horizontal.
+    expect(spans.map((s) => s.bbox)).toContainEqual({ x: 355, y: 175, width: 30, height: 7.5 });
   } finally {
     await pdf.close();
   }

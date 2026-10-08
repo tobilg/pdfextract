@@ -96,3 +96,15 @@ test('E2E-01 IMG-01/02/03/04: native-size large export and mask/inline inventory
   await page.locator('#gallery button').click();
   await expect(page.locator('#selected')).toContainText('SHA-256');
 });
+
+test('IMG-06: a host minimum image size skips small images and reports them', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.pdfextractHost = { minImageWidth: 2, minImageHeight: 2 };
+  });
+  await page.goto('./');
+  // baseline.pdf holds a 2×2 and a 1×1 image.
+  await page.locator('#pdf').setInputFiles(resolve('tests/fixtures/baseline.pdf'));
+  await expect(page.locator('#status')).toContainText('Extraction stored');
+  await expect(page.locator('#status')).toContainText('1 smaller image was ignored');
+  await expect(page.locator('#gallery button')).toHaveCount(1);
+});

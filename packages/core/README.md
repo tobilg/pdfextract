@@ -64,8 +64,37 @@ Images have document-scoped IDs, original dimensions, appearance variants, and d
 occurrences with `imageToPage: [a,b,c,d,e,f]` mapping top-left raster pixel edges into
 canonical page coordinates. Nested forms, inline images, tiny assets and reused images
 are included. Auxiliary masks are applied. Page clipping is reported, not baked into
-the standalone asset. Full PNG output preserves native width/height, orientation,
-RGBA8 transparency and sRGB appearance within the documented color envelope.
+the standalone asset. Full PNG output preserves native resolution, RGBA8 transparency
+and sRGB appearance within the documented color envelope.
+
+PDFs often store an image mirrored or turned and flip it back when drawing it. Exports
+show the image **as it appears on the page**: mirrored and quarter-turn placements are
+corrected losslessly (pixels are reordered, never resampled), so a 90° placement swaps
+width and height. Each occurrence reports the stored raster's `originalOrientation`
+(`{ rotation: 0 | 90 | 180 | 270, mirrored }`). The first occurrence decides the export
+orientation unless you pass `occurrenceId`; pass `preserveOrientation: true` to get the
+raster exactly as stored. Regional OCR also reads the corrected raster.
+
+```ts
+const upright = await pdf.extractImage(image.id); // as on the page
+const stored = await pdf.extractImage(image.id, { preserveOrientation: true });
+```
+
+### Minimum image size
+
+`getImages` lists every image by default. Pass `minWidth` and/or `minHeight` (positive
+whole pixels) to leave out smaller images such as icons, bullets or spacer pixels. Sizes are
+measured as exported by default, so a quarter-turn placement counts with width and height
+swapped. The returned array keeps its type and adds `ignoredCount`, the number of images on
+the selected pages that were left out (`0` without a filter; it is not part of JSON output).
+The filter only shapes the list: OCR still reads every image region, and `extractImage`
+still accepts any image ID.
+
+```ts
+// Skip icons, bullets and other small images (default: every image is listed).
+const images = await pdf.getImages({ minWidth: 100, minHeight: 100 });
+console.log(`${images.length} images, ${images.ignoredCount} smaller images ignored`);
+```
 Thumbnails are explicitly requested, aspect-preserving nearest-neighbor previews;
 they never mutate a full export. No screenshot/composite substitutes for an image.
 

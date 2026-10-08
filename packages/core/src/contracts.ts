@@ -76,6 +76,20 @@ export interface StructuredTextOptions extends OperationOptions {
 export interface GetImagesOptions extends OperationOptions {
   /** One-based pages whose image occurrences are included; omitted means all pages. */
   pages?: readonly number[];
+  /**
+   * Positive minimum width in pixels; smaller images are left out and counted in
+   * {@link ImageList.ignoredCount}. Measured as exported by default, so quarter-turn placements
+   * count with width and height swapped. Omitted means no width filter.
+   */
+  minWidth?: number;
+  /** Positive minimum height in pixels, measured like `minWidth`. Omitted means no height filter. */
+  minHeight?: number;
+}
+
+/** Embedded images returned by {@link PdfDocument.getImages}: an array with filter statistics. */
+export interface ImageList extends ReadonlyArray<EmbeddedImage> {
+  /** Images on the selected pages left out by `minWidth`/`minHeight`; 0 when unfiltered. Not part of JSON output. */
+  readonly ignoredCount: number;
 }
 
 /** Export options. Omitting both bounds requests native dimensions; supplying a bound explicitly requests a thumbnail. */
@@ -84,6 +98,13 @@ export interface ExtractImageOptions extends OperationOptions {
   maxWidth?: number;
   /** Positive maximum thumbnail height in pixels. The full export is unchanged by preview generation. */
   maxHeight?: number;
+  /** Placement whose on-page orientation is applied; defaults to the image's first occurrence. */
+  occurrenceId?: string;
+  /**
+   * Return the raster in its stored orientation instead of how the placement shows it on the page.
+   * By default, mirrored and quarter-turn placements are corrected losslessly (see {@link ImageOrientation}).
+   */
+  preserveOrientation?: boolean;
 }
 
 /** An independently owned PNG export that remains valid after the PDF is closed. */
@@ -94,9 +115,9 @@ export interface ExtractedImage {
   data: Uint8Array<ArrayBuffer>;
   /** MIME type of the encoded output. */
   mimeType: 'image/png';
-  /** Actual output width in pixels. */
+  /** Actual output width in pixels; swapped relative to the native width for quarter-turn placements. */
   width: number;
-  /** Actual output height in pixels. */
+  /** Actual output height in pixels; swapped relative to the native height for quarter-turn placements. */
   height: number;
   /** full preserves native dimensions; thumbnail is an explicitly bounded preview. */
   variant: 'full' | 'thumbnail';
@@ -108,9 +129,15 @@ export interface PdfDocument {
   readonly pageCount: number;
   /** Extract native/OCR text with deterministic geometry-based ordering. Auto OCR includes image regions on mixed pages. */
   getStructuredText(options?: StructuredTextOptions): Promise<StructuredText>;
-  /** Enumerate appearances and placements, including inline/nested/reused images. Raster decoding happens on demand. */
-  getImages(options?: GetImagesOptions): Promise<readonly EmbeddedImage[]>;
-  /** Export a selected appearance as owned PNG bytes. Unknown IDs fail; native export never silently downscales. */
+  /**
+   * Enumerate appearances and placements, including inline/nested/reused images. Raster decoding
+   * happens on demand. `minWidth`/`minHeight` leave out small images; all images are listed by default.
+   */
+  getImages(options?: GetImagesOptions): Promise<ImageList>;
+  /**
+   * Export a selected appearance as owned PNG bytes, oriented as its placement appears on the page
+   * unless `preserveOrientation` is set. Unknown IDs fail; full export never silently downscales.
+   */
   extractImage(id: ImageId, options?: ExtractImageOptions): Promise<ExtractedImage>;
   /** Idempotently cancel queued work and join engine cleanup. Returned data remains valid; the OCR provider stays open. */
   close(): Promise<void>;
@@ -222,6 +249,19 @@ export interface StructuredText {
 /** PDF-style [a,b,c,d,e,f]: x′ = a*x + c*y + e, y′ = b*x + d*y + f. */
 export type AffineTransform = readonly [number, number, number, number, number, number];
 
+/**
+ * How a stored raster is oriented relative to its appearance on the page. To display it as on the
+ * page, mirror it horizontally when `mirrored` is true, then rotate it clockwise by `rotation`
+ * degrees. `{ rotation: 0, mirrored: false }` means the stored raster is already upright.
+ * Rotation is rounded to the nearest quarter turn; smaller tilts are left in place.
+ */
+export interface ImageOrientation {
+  /** Clockwise rotation in degrees, applied after any mirroring. */
+  rotation: 0 | 90 | 180 | 270;
+  /** Whether the placement mirrors the stored raster. */
+  mirrored: boolean;
+}
+
 /** One placement of an embedded appearance; repeated uses remain distinct even when their asset is shared. */
 export interface ImageOccurrence {
   /** Distinct document-scoped placement identifier. */
@@ -234,15 +274,17 @@ export interface ImageOccurrence {
   imageToPage: AffineTransform;
   /** Whether a clipping path affected placement; standalone export still preserves the whole source image. */
   clipped: boolean;
+  /** Orientation of the stored raster relative to this placement; exports correct it by default. */
+  originalOrientation: ImageOrientation;
 }
 
 /** A source-resolution embedded raster appearance. Auxiliary masks are applied to the asset, not listed separately. */
 export interface EmbeddedImage {
   /** Opaque identifier for this document and appearance variant. */
   id: ImageId;
-  /** Native source width in pixels, independent of page placement size. */
+  /** Native source width in pixels, independent of page placement size and orientation. */
   width: number;
-  /** Native source height in pixels. */
+  /** Native source height in pixels, independent of page placement orientation. */
   height: number;
   /** Original sample bit depth when available; exported PNG pixels are RGBA8. */
   bitsPerComponent?: number;

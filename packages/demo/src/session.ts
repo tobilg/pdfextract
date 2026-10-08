@@ -20,6 +20,8 @@ export const DEMO_LIMITS: PdfLimits = {
 export interface Result {
   text: StructuredText;
   images: readonly EmbeddedImage[];
+  /** Images left out by the minimum size filter. */
+  ignoredImages: number;
 }
 
 export interface SessionOptions {
@@ -27,6 +29,9 @@ export interface SessionOptions {
   ocrMode: 'auto' | 'always';
   language: string;
   password: string;
+  /** Optional minimum image width/height in pixels; smaller images are not listed. */
+  minWidth?: number;
+  minHeight?: number;
 }
 
 /** One tab-local document. No storage adapter, upload endpoint or browser database. */
@@ -73,8 +78,12 @@ export class PdfSession {
       ocr: options.ocr ? options.ocrMode : 'off',
       errorMode: 'collect',
     });
-    const images = await pdf.getImages(operation);
-    return { text, images };
+    const images = await pdf.getImages({
+      ...operation,
+      minWidth: options.minWidth,
+      minHeight: options.minHeight,
+    });
+    return { text, images, ignoredImages: images.ignoredCount };
   }
 
   async image(id: string, thumbnail: boolean, signal: AbortSignal) {

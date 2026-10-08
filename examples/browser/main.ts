@@ -19,6 +19,9 @@ declare global {
     pdfextractHost?: {
       storage?: StorageAdapter;
       limits?: PdfLimits;
+      /** Optional minimum image width/height in pixels; smaller images are not stored. */
+      minImageWidth?: number;
+      minImageHeight?: number;
       loadImage?: (file: File) => Promise<void> | void;
     };
     pdfextractS3?: {
@@ -132,6 +135,8 @@ element<HTMLInputElement>('pdf').onchange = () =>
       const result = await extractAndStore(file, storage, {
         ocr,
         limits: window.pdfextractHost?.limits,
+        minWidth: window.pdfextractHost?.minImageWidth,
+        minHeight: window.pdfextractHost?.minImageHeight,
         signal: controller.signal,
         onProgress: (e) => {
           status.textContent = `${e.stage}: ${e.completed}/${e.total ?? '?'}`;
@@ -145,7 +150,10 @@ element<HTMLInputElement>('pdf').onchange = () =>
       manifestInput.value = result.manifestKey;
       localStorage.setItem('pdfextract:last-manifest', result.manifestKey);
       await show(result.manifest);
-      status.textContent = 'Extraction stored. Select an image or reload and load its manifest.';
+      const ignored = result.manifest.ignoredImageCount ?? 0;
+      status.textContent = `Extraction stored. Select an image or reload and load its manifest.${
+        ignored ? ` ${ignored} smaller ${ignored === 1 ? 'image was' : 'images were'} ignored.` : ''
+      }`;
     } finally {
       await ocr?.close();
     }

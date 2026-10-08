@@ -15,10 +15,23 @@ raster pixel edges to page coordinates: `x′ = a*x + c*y + e`, `y′ = b*x + d*
 Distinct repeated occurrences retain their own placement IDs and transforms. Image IDs
 belong to one document and appearance variant; persist their associations in a manifest.
 
-Full image export preserves native dimensions even when the PDF draws an image small.
+Full image export preserves native resolution even when the PDF draws an image small.
+Exports are oriented as the image appears on the page: a placement that mirrors or turns
+the stored raster by quarter turns is corrected losslessly, and 90°/270° placements swap
+width and height. `originalOrientation` on each occurrence describes the stored raster:
+mirror it horizontally if `mirrored`, then rotate clockwise by `rotation`, to get the
+page view. Smaller tilts are left as stored. Pass `occurrenceId` to choose which
+placement's orientation applies (default: the first), or `preserveOrientation: true` for
+the raster exactly as stored.
 Inline, nested-form, reused and tiny images are included. Auxiliary masks are applied.
 Page clipping is reported on occurrences and does not crop the standalone asset. Explicit
 thumbnail bounds request a separate aspect-preserving nearest-neighbor preview.
+
+`getImages` lists every image unless you pass `minWidth` and/or `minHeight` (positive
+whole pixels). Images smaller than either bound are left out, measured as exported by
+default, so quarter-turn placements count with width and height swapped. The result's
+`ignoredCount` reports how many images on the selected pages were left out. The filter
+does not change OCR coverage or which IDs `extractImage` accepts.
 
 ## Tested fidelity envelope
 

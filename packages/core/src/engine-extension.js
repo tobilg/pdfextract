@@ -20,6 +20,24 @@ const pdfextractMultiply = (m, n) => [
   m[0] * n[4] + m[2] * n[5] + m[4],
   m[1] * n[4] + m[3] * n[5] + m[5],
 ];
+// Losslessly reorders RGBA pixels so a stored raster appears as its placement shows it on the page.
+// `axes` is the linear part of geometry.ts orientationTransform: page directions of the raster's
+// x and y axes, each an axis-aligned unit vector.
+function pdfextractOrient(pixels, width, height, axes) {
+  if (!axes || (axes[0] === 1 && axes[3] === 1)) return { pixels, width, height };
+  const [ux, uy, vx, vy] = axes,
+    outWidth = ux ? width : height,
+    outHeight = ux ? height : width,
+    offsetX = Math.max(0, -ux) * (width - 1) + Math.max(0, -vx) * (height - 1),
+    offsetY = Math.max(0, -uy) * (width - 1) + Math.max(0, -vy) * (height - 1),
+    source = new Uint32Array(pixels.buffer, pixels.byteOffset, width * height),
+    output = new Uint32Array(width * height);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++)
+      output[(uy * x + vy * y + offsetY) * outWidth + ux * x + vx * y + offsetX] =
+        source[y * width + x];
+  return { pixels: new Uint8Array(output.buffer), width: outWidth, height: outHeight };
+}
 // biome-ignore lint/correctness/noUnusedVariables: Called by the generated worker RPC handler.
 async function pdfextractScan(manager, handler, data) {
   const page = await manager.getPage(data.pageIndex);
@@ -218,23 +236,27 @@ async function pdfextractScan(manager, handler, data) {
         // Parsed DecodeStreams can cache their pixel buffer. Evict cached image
         // streams after export; later exports reparse from owned PDF bytes.
         page.xref._cacheMap.clear();
+        const oriented = pdfextractOrient(pixels, width, height, data.orient);
+        pixels = oriented.pixels;
+        const outputWidth = oriented.width,
+          outputHeight = oriented.height;
         if (data.encode) {
           const ratio = Math.min(
               1,
-              (data.maxWidth ?? width) / width,
-              (data.maxHeight ?? height) / height,
+              (data.maxWidth ?? outputWidth) / outputWidth,
+              (data.maxHeight ?? outputHeight) / outputHeight,
             ),
-            outWidth = Math.max(1, Math.floor(width * ratio)),
-            outHeight = Math.max(1, Math.floor(height * ratio));
+            outWidth = Math.max(1, Math.floor(outputWidth * ratio)),
+            outHeight = Math.max(1, Math.floor(outputHeight * ratio));
           let output = pixels;
           if (ratio < 1) {
             output = new Uint8Array(outWidth * outHeight * 4);
             for (let y = 0; y < outHeight; y++)
               for (let x = 0; x < outWidth; x++) {
-                const sx = Math.min(width - 1, Math.floor((x + 0.5) / ratio)),
-                  sy = Math.min(height - 1, Math.floor((y + 0.5) / ratio));
+                const sx = Math.min(outputWidth - 1, Math.floor((x + 0.5) / ratio)),
+                  sy = Math.min(outputHeight - 1, Math.floor((y + 0.5) / ratio));
                 output.set(
-                  pixels.subarray((sy * width + sx) * 4, (sy * width + sx) * 4 + 4),
+                  pixels.subarray((sy * outputWidth + sx) * 4, (sy * outputWidth + sx) * 4 + 4),
                   (y * outWidth + x) * 4,
                 );
               }
@@ -253,7 +275,7 @@ async function pdfextractScan(manager, handler, data) {
             ),
           };
         }
-        return { ...info, pixels };
+        return { ...info, width: outputWidth, height: outputHeight, pixels };
       }
     }
   }

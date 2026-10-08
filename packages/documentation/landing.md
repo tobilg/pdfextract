@@ -26,7 +26,7 @@ Use Node.js ≥22.12.0 or a modern browser with ESM support.
 
 Pass a whole `File`, `Blob`, `ArrayBuffer` or `Uint8Array` to `openPdf`; Node `Buffer`
 also works. This Node example reads native text and saves each embedded image at its
-original dimensions, with a separate thumbnail:
+original resolution, oriented as it appears on the page, with a separate thumbnail:
 
 ```ts
 import { readFile, writeFile } from 'node:fs/promises';
@@ -56,6 +56,15 @@ core asset directory. Follow the [asset setup guide](guides/ocr-and-assets.md) t
 the worker, WASM and related files. Exported bytes remain valid after closing the PDF.
 Image IDs belong to that open document; persist the exports and their associations
 when you need them in another session.
+
+To skip icons and other small images, pass a minimum size to `getImages`. Every image is
+listed by default; `ignoredCount` reports how many were left out:
+
+```ts
+// Skip icons, bullets and other small images (default: every image is listed).
+const images = await pdf.getImages({ minWidth: 100, minHeight: 100 });
+console.log(`${images.length} images, ${images.ignoredCount} smaller images ignored`);
+```
 
 ## Add OCR or persistence
 

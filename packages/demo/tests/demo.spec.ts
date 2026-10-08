@@ -232,3 +232,23 @@ test('IMG-01: full export retains native dimensions; mobile layout fits', async 
     true,
   );
 });
+
+test('IMG-06: a minimum image size skips small images and the summary counts them', async ({
+  page,
+}) => {
+  await page.goto('./');
+  await page.getByLabel('Minimum image width').fill('2');
+  await page.getByLabel('Minimum image height').fill('2');
+  // baseline.pdf holds a 2×2 and a 1×1 image.
+  await page.locator('#pdf-file').setInputFiles(fixture('baseline.pdf'));
+  await expect(page.getByRole('status').first()).toContainText('Extraction complete');
+  await expect(page.locator('.result-summary')).toContainText('1 embedded image');
+  await expect(page.locator('.result-summary')).toContainText('1 smaller image ignored');
+  await expect(page.locator('.image-card')).toHaveCount(1);
+  // Clearing the filter lists every image again.
+  await page.getByLabel('Minimum image width').fill('');
+  await page.getByLabel('Minimum image height').fill('');
+  await page.getByRole('button', { name: 'Extract again' }).click();
+  await expect(page.locator('.result-summary')).toContainText('2 embedded images');
+  await expect(page.locator('.result-summary')).not.toContainText('ignored');
+});

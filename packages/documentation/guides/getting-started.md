@@ -30,6 +30,15 @@ The document's four operations are `getStructuredText`, `getImages`, `extractIma
 and `close`. The structured result includes pages, blocks, lines, spans, provenance,
 warnings and derived `fullText`. It round-trips through JSON.
 
+`getImages` lists every embedded image by default. To skip icons and other small images,
+pass a minimum size; the returned list reports how many images were left out:
+
+```ts
+// Skip icons, bullets and other small images (default: every image is listed).
+const images = await pdf.getImages({ minWidth: 100, minHeight: 100 });
+console.log(`${images.length} images, ${images.ignoredCount} smaller images ignored`);
+```
+
 ## Run the complete examples
 
 From the repository root, run `pnpm build && pnpm assets && pnpm dev` and open
@@ -42,6 +51,10 @@ PDFEXTRACT_LANGUAGE_PATH="$PWD/node_modules/@tesseract.js-data/eng/4.0.0" \
   pnpm example:node extract tests/fixtures/mixed.pdf ./pdf-assets
 pnpm example:node load '<printed-manifest-key>' ./pdf-assets
 ```
+
+Set `PDFEXTRACT_MIN_IMAGE_WIDTH` and/or `PDFEXTRACT_MIN_IMAGE_HEIGHT` for `extract` to store
+only images at least that large; `load` prints how many were ignored. In the browser example,
+the host sets `window.pdfextractHost.minImageWidth`/`minImageHeight` before loading.
 
 The source examples are in the repository's
 [browser](https://github.com/tobilg/pdfextract/tree/main/examples/browser) and

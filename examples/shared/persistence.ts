@@ -1,4 +1,10 @@
-import type { ImageOccurrence, OpenPdfOptions, PdfInput, StorageAdapter } from '@pdfextract/core';
+import type {
+  GetImagesOptions,
+  ImageOccurrence,
+  OpenPdfOptions,
+  PdfInput,
+  StorageAdapter,
+} from '@pdfextract/core';
 import { checkAbort, openPdf, PdfExtractError } from '@pdfextract/core';
 export interface StoredImage {
   id: string;
@@ -18,7 +24,12 @@ export interface ExtractionManifest {
   structuredTextKey: string;
   plainTextKey: string;
   images: StoredImage[];
+  /** Images left out by the minimum size filter; absent in manifests written without one. */
+  ignoredImageCount?: number;
 }
+/** Open options plus an optional minimum size for the images to store. */
+export type ExtractAndStoreOptions = OpenPdfOptions &
+  Pick<GetImagesOptions, 'minWidth' | 'minHeight'>;
 export class PersistenceError extends Error {
   constructor(
     message: string,
@@ -49,7 +60,9 @@ export function validateExtractionManifest(value: unknown): ExtractionManifest {
     !/^[a-zA-Z0-9_-]{1,100}$/.test(v.documentId) ||
     !Number.isSafeInteger(v.pageCount) ||
     (v.pageCount as number) < 1 ||
-    !Array.isArray(v.images)
+    !Array.isArray(v.images) ||
+    (v.ignoredImageCount !== undefined &&
+      (!Number.isSafeInteger(v.ignoredImageCount) || (v.ignoredImageCount as number) < 0))
   )
     return invalid();
   const key = (k: unknown) =>
@@ -119,7 +132,7 @@ export async function sha256(bytes: Uint8Array) {
 export async function extractAndStore(
   input: PdfInput,
   storage: StorageAdapter,
-  options: OpenPdfOptions = {},
+  options: ExtractAndStoreOptions = {},
 ) {
   const documentId = crypto.randomUUID(),
     manifestKey = `${documentId}/manifest.json`,
@@ -167,6 +180,7 @@ export async function extractAndStore(
       structuredTextKey: `${documentId}/text/structured.json`,
       plainTextKey: `${documentId}/text/plain.txt`,
       images: [],
+      ignoredImageCount: 0,
     };
     await json(manifest.structuredTextKey, text);
     await put(
@@ -175,6 +189,7 @@ export async function extractAndStore(
       'text/plain; charset=utf-8',
     );
     const images = await pdf.getImages(options);
+    manifest.ignoredImageCount = images.ignoredCount;
     for (const [index, image] of images.entries()) {
       const full = await pdf.extractImage(image.id, options),
         fullSizeKey = `${documentId}/images/${index}/full.png`,

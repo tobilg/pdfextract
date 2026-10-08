@@ -18,7 +18,8 @@ select {
 }
 button,
 select,
-input[type="password"] {
+input[type="password"],
+input[type="number"] {
   border: 1px solid #bcc7cd;
   border-radius: 6px;
   background: white;
@@ -137,6 +138,20 @@ input[type="checkbox"] {
 }
 input[type="password"] {
   width: 185px;
+}
+input[type="number"] {
+  width: 6.5rem;
+}
+.size-filter {
+  margin: 0;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+/* A floated legend joins the flex row instead of sitting on the border. */
+.size-filter legend {
+  float: left;
+  padding: 0;
+  margin-right: 4px;
 }
 .drop-zone {
   position: relative;

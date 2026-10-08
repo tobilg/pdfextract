@@ -45,6 +45,15 @@ try {
 }
 ```
 
+To skip small images such as icons, pass a minimum size. Images are measured as they are
+exported, and the returned list reports how many were left out:
+
+```ts
+// Skip icons, bullets and other small images (default: every image is listed).
+const images = await pdf.getImages({ minWidth: 100, minHeight: 100 });
+console.log(`${images.length} images, ${images.ignoredCount} smaller images ignored`);
+```
+
 Node works without configuration. Browser bundlers and Web Workers must serve the
 packaged engine, worker and OCR assets themselves; see the
 [asset setup guide](packages/documentation/guides/ocr-and-assets.md).
@@ -102,8 +111,11 @@ PDFEXTRACT_LANGUAGE_PATH="$PWD/node_modules/@tesseract.js-data/eng/4.0.0" \
 pnpm example:node load '<document-id>/manifest.json' ./pdf-assets
 ```
 
-Omit the environment variable for native text without OCR. Ctrl-C cancels the Node
-workflow.
+Omit the environment variable for native text without OCR. Set
+`PDFEXTRACT_MIN_IMAGE_WIDTH` and/or `PDFEXTRACT_MIN_IMAGE_HEIGHT` to store only images at
+least that many pixels wide/high; `load` prints how many were ignored. The browser example
+reads the same setting from `window.pdfextractHost.minImageWidth`/`minImageHeight`.
+Ctrl-C cancels the Node workflow.
 
 ### Websites
 

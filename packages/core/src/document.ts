@@ -4,6 +4,8 @@ import type {
   ExtractedImage,
   ExtractImageOptions,
   GetImagesOptions,
+  ImageList,
+  ImageOccurrence,
   OcrRaster,
   OpenPdfOptions,
   OperationOptions,
@@ -17,7 +19,15 @@ import type {
 } from './contracts.js';
 import { createCanvas, inputBytes, openEngine } from './engine.js';
 import { checkAbort, PdfExtractError, positive } from './errors.js';
-import { duplicate, layout, multiply, transformBox } from './geometry.js';
+import {
+  duplicate,
+  invert,
+  layout,
+  multiply,
+  orientationOf,
+  orientationTransform,
+  transformBox,
+} from './geometry.js';
 /** Default positive resource budgets; decoded memory is estimated and full exports never silently downscale. */
 export const DEFAULT_LIMITS: Required<PdfLimits> = Object.freeze({
   maxInputBytes: 256 * 1024 * 1024,
@@ -169,6 +179,7 @@ class Document implements PdfDocument {
           imageToPage,
           bbox: transformBox({ x: 0, y: 0, width: item.width, height: item.height }, imageToPage),
           clipped: item.clipped,
+          originalOrientation: orientationOf(imageToPage),
         });
       }
       page.cleanup();
@@ -183,21 +194,36 @@ class Document implements PdfDocument {
     this.inventory = [...assets.values()];
     return this.inventory;
   }
-  getImages(options: GetImagesOptions = {}) {
+  getImages(options: GetImagesOptions = {}): Promise<ImageList> {
     return this.queue(options, async (signal) => {
       const pages = this.pages(options.pages);
+      const minWidth = options.minWidth === undefined ? 0 : positive(options.minWidth, 'minWidth'),
+        minHeight = options.minHeight === undefined ? 0 : positive(options.minHeight, 'minHeight');
       const assets = await this.collectImages(options, signal);
-      return structuredClone(
-        assets
-          .map((a) => ({
-            ...a,
-            occurrences: a.occurrences.filter((o) => pages.includes(o.pageNumber)),
-          }))
-          .filter((a) => a.occurrences.length),
+      const selected = assets.filter((a) =>
+        a.occurrences.some((o) => pages.includes(o.pageNumber)),
       );
+      // Size as exported by default: the first placement's orientation decides, like extractImage.
+      const kept = selected.filter((a) => {
+        const quarterTurn = a.occurrences[0].originalOrientation.rotation % 180 === 90;
+        const width = quarterTurn ? a.height : a.width,
+          height = quarterTurn ? a.width : a.height;
+        return width >= minWidth && height >= minHeight;
+      });
+      const images = kept.map((a) => ({
+        ...a,
+        occurrences: a.occurrences.filter((o) => pages.includes(o.pageNumber)),
+      }));
+      return Object.assign(structuredClone(images), {
+        ignoredCount: selected.length - kept.length,
+      });
     });
   }
-  private async raster(id: string, signal: AbortSignal) {
+  /** Linear part of the transform that shows an occurrence's raster upright, as on the page. */
+  private axes(occurrence: ImageOccurrence) {
+    return orientationTransform(occurrence.originalOrientation, 1, 1).slice(0, 4);
+  }
+  private async raster(id: string, signal: AbortSignal, occurrence: ImageOccurrence) {
     checkAbort(signal);
     const location = this.locations.get(id);
     if (!location)
@@ -209,6 +235,7 @@ class Document implements PdfDocument {
       location.rawId,
       this.limits.maxImagePixels,
       this.limits.maxDecodedBytes,
+      { orient: this.axes(occurrence) },
     );
     checkAbort(signal);
     return {
@@ -223,19 +250,33 @@ class Document implements PdfDocument {
     return this.queue(options, async (signal) => {
       if (options.maxWidth !== undefined) positive(options.maxWidth, 'maxWidth');
       if (options.maxHeight !== undefined) positive(options.maxHeight, 'maxHeight');
-      await this.collectImages(options, signal);
+      const assets = await this.collectImages(options, signal);
       checkAbort(signal);
       const location = this.locations.get(id);
-      if (!location)
+      const asset = assets.find((a) => a.id === id);
+      if (!location || !asset)
         throw new PdfExtractError('IMAGE_NOT_FOUND', 'Unknown image ID', {
           context: { imageId: id },
+        });
+      const occurrence =
+        options.occurrenceId === undefined
+          ? asset.occurrences[0]
+          : asset.occurrences.find((o) => o.occurrenceId === options.occurrenceId);
+      if (!occurrence)
+        throw new PdfExtractError('INVALID_ARGUMENT', 'Unknown occurrenceId for this image', {
+          context: { imageId: id, occurrenceId: options.occurrenceId },
         });
       const source = await this.engine.images(
         location.pageIndex,
         location.rawId,
         this.limits.maxImagePixels,
         this.limits.maxDecodedBytes,
-        { encode: true, maxWidth: options.maxWidth, maxHeight: options.maxHeight },
+        {
+          encode: true,
+          maxWidth: options.maxWidth,
+          maxHeight: options.maxHeight,
+          ...(options.preserveOrientation ? {} : { orient: this.axes(occurrence) }),
+        },
       );
       checkAbort(signal);
       const width = source.width,
@@ -346,8 +387,18 @@ class Document implements PdfDocument {
                       'RESOURCE_LIMIT_EXCEEDED',
                       'Image exceeds maxOcrPixels',
                     );
-                  raster = await this.raster(task.image.id, signal);
-                  transform = task.occurrence.imageToPage;
+                  // Recognize upright text: OCR the raster as the placement shows it on the page.
+                  raster = await this.raster(task.image.id, signal, task.occurrence);
+                  transform = multiply(
+                    task.occurrence.imageToPage,
+                    invert(
+                      orientationTransform(
+                        task.occurrence.originalOrientation,
+                        task.image.width,
+                        task.image.height,
+                      ),
+                    ),
+                  );
                 } else {
                   const scale = Math.min(
                     2,

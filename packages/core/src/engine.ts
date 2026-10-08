@@ -163,7 +163,13 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
         decodeId?: string,
         maxPixels?: number,
         maxBytes?: number,
-        exportOptions: { encode?: boolean; maxWidth?: number; maxHeight?: number } = {},
+        exportOptions: {
+          encode?: boolean;
+          maxWidth?: number;
+          maxHeight?: number;
+          /** Linear part of an orientation transform; omitted keeps the stored orientation. */
+          orient?: readonly number[];
+        } = {},
       ) {
         const result = await Promise.race([
           doc._transport.messageHandler.sendWithPromise('PdfextractImages', {
