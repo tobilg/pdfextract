@@ -28,7 +28,8 @@ controls the lifetime of the resulting bytes.
 
 The document's four operations are `getStructuredText`, `getImages`, `extractImage`
 and `close`. The structured result includes pages, blocks, lines, spans, provenance,
-warnings and derived `fullText`. It round-trips through JSON.
+warnings and derived `fullText`. It round-trips through JSON. Detected tables are listed
+per page in `tables` and read row by row in the text; see [Tables](tables.md).
 
 `getImages` lists every embedded image by default. To skip icons and other small images,
 pass a minimum size; the returned list reports how many images were left out:
@@ -38,6 +39,14 @@ pass a minimum size; the returned list reports how many images were left out:
 const images = await pdf.getImages({ minWidth: 100, minHeight: 100 });
 console.log(`${images.length} images, ${images.ignoredCount} smaller images ignored`);
 ```
+
+A page with broken content (for example text shown before any font is set) does not stop the
+list: it is read leniently, and `images.warnings` names it with `IMAGE_INVENTORY_DEGRADED`.
+
+To export an image together with the text, markup or images drawn over it, as it appears
+on the page, pass `composite: true` to `extractImage` (or as an `openPdf` default) and
+check `overlaid` on each occurrence; the
+[core package page](../../core/README.md) explains composites and their limits.
 
 ## Run the complete examples
 

@@ -131,6 +131,10 @@ fieldset .checkbox {
   gap: 9px;
   font-weight: 600;
 }
+fieldset .checkbox.nested {
+  margin-left: 26px;
+  font-weight: 500;
+}
 input[type="checkbox"] {
   accent-color: #17624e;
   width: 17px;
@@ -572,4 +576,40 @@ footer {
   button:active:not(:disabled) {
     transform: none;
   }
+}
+
+.tables {
+  display: grid;
+  gap: 20px;
+}
+.tables figure {
+  margin: 0;
+}
+.tables figcaption {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.tables table {
+  border-collapse: collapse;
+  background: white;
+  font-size: 0.95rem;
+}
+.tables td {
+  border: 1px solid #c9d1d6;
+  padding: 6px 10px;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+.badge {
+  display: inline-block;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e3f1ec;
+  color: #17624e;
+  font-size: 0.85rem;
+  font-weight: 600;
 }

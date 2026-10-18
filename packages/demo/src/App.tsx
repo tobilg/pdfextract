@@ -1,4 +1,10 @@
-import type { EmbeddedImage, ExtractedImage, ProgressEvent, TextPage } from '@pdfextract/core';
+import type {
+  EmbeddedImage,
+  ExtractedImage,
+  ProgressEvent,
+  Table,
+  TextPage,
+} from '@pdfextract/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PdfSession, type Result, type SessionOptions } from './session';
 
@@ -68,8 +74,11 @@ export function App() {
   const [password, setPassword] = useState('');
   const [minWidth, setMinWidth] = useState('');
   const [minHeight, setMinHeight] = useState('');
+  const [tables, setTables] = useState(false);
+  const [composite, setComposite] = useState(false);
+  const [annotations, setAnnotations] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
-  const [view, setView] = useState<'text' | 'structure' | 'json'>('text');
+  const [view, setView] = useState<'text' | 'structure' | 'tables' | 'json'>('text');
   const download = useDownloads();
 
   useEffect(() => {
@@ -123,6 +132,9 @@ export function App() {
           password,
           minWidth: pixels(minWidth),
           minHeight: pixels(minHeight),
+          tables,
+          composite,
+          annotations,
           ...overrides,
         },
         (event) => {
@@ -136,7 +148,7 @@ export function App() {
       if (session.current !== next) return;
       setResult(output);
       setStatus(
-        output.text.status === 'partial'
+        output.text.status === 'partial' || output.imageWarnings.length
           ? 'Extraction finished with warnings.'
           : 'Extraction complete.',
       );
@@ -179,6 +191,13 @@ export function App() {
   }
 
   const page = result?.text.pages[pageIndex];
+  // Text and image-list diagnostics share one panel.
+  const warnings = result ? [...result.text.warnings, ...result.imageWarnings] : [];
+  // The Tables view only exists for results extracted with table detection.
+  const views = result?.tables
+    ? (['text', 'structure', 'tables', 'json'] as const)
+    : (['text', 'structure', 'json'] as const);
+  const activeView = view === 'tables' && !result?.tables ? 'text' : view;
   return (
     <>
       <header className="topbar">
@@ -233,6 +252,32 @@ export function App() {
                     <option value="eng">English</option>
                     <option value="deu">German</option>
                   </select>
+                </label>
+              )}
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={tables}
+                  onChange={(event) => setTables(event.target.checked)}
+                />
+                Detect tables
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={composite}
+                  onChange={(event) => setComposite(event.target.checked)}
+                />
+                Show images with overlays (as on the page)
+              </label>
+              {composite && (
+                <label className="checkbox nested">
+                  <input
+                    type="checkbox"
+                    checked={annotations}
+                    onChange={(event) => setAnnotations(event.target.checked)}
+                  />
+                  Include annotations
                 </label>
               )}
               <fieldset className="size-filter">
@@ -363,6 +408,12 @@ export function App() {
                   ignored
                 </span>
               )}
+              {result.tables && (
+                <span>
+                  {tableCount(result.text.pages)}{' '}
+                  {tableCount(result.text.pages) === 1 ? 'table' : 'tables'}
+                </span>
+              )}
               <span>
                 {result.text.pages
                   .reduce((count, entry) => count + entry.fullText.length, 0)
@@ -395,11 +446,11 @@ export function App() {
                   </button>
                 </aside>
               )}
-            {result.text.warnings.length > 0 && (
+            {warnings.length > 0 && (
               <details className="warnings">
-                <summary>{result.text.warnings.length} extraction warnings</summary>
+                <summary>{warnings.length} extraction warnings</summary>
                 <ul>
-                  {result.text.warnings.map((warning) => (
+                  {warnings.map((warning) => (
                     <li key={keyFor(warning)}>
                       {warning.pageNumber ? `Page ${warning.pageNumber}: ` : ''}
                       {warning.message} ({warning.code})
@@ -456,28 +507,41 @@ export function App() {
                   </label>
                   <fieldset className="view-switch">
                     <legend className="sr-only">Text view</legend>
-                    {(['text', 'structure', 'json'] as const).map((option) => (
+                    {views.map((option) => (
                       <button
                         key={option}
                         type="button"
-                        aria-pressed={view === option}
+                        aria-pressed={activeView === option}
                         onClick={() => setView(option)}
                       >
-                        {{ text: 'Reading', structure: 'Structure', json: 'Page JSON' }[option]}
+                        {
+                          {
+                            text: 'Reading',
+                            structure: 'Structure',
+                            tables: 'Tables',
+                            json: 'Page JSON',
+                          }[option]
+                        }
                       </button>
                     ))}
                   </fieldset>
                 </div>
                 <p className="page-meta">
                   {page.width.toFixed(1)} × {page.height.toFixed(1)} pt · {page.blocks.length}{' '}
-                  blocks · OCR: {page.ocrStatus}
+                  blocks
+                  {result.tables
+                    ? ` · ${page.tables.length} ${page.tables.length === 1 ? 'table' : 'tables'}`
+                    : ''}{' '}
+                  · OCR: {page.ocrStatus}
                 </p>
-                {view === 'json' ? (
+                {activeView === 'json' ? (
                   <pre className="json-view" data-testid="page-json">
                     {JSON.stringify(page, null, 2)}
                   </pre>
-                ) : view === 'structure' ? (
+                ) : activeView === 'structure' ? (
                   <Structure page={page} />
+                ) : activeView === 'tables' ? (
+                  <Tables page={page} />
                 ) : (
                   <div className="reading" data-testid="reading">
                     {page.fullText ||
@@ -489,6 +553,7 @@ export function App() {
                 session={session.current}
                 images={result.images}
                 ignored={result.ignoredImages}
+                composite={result.composite}
               />
             </div>
           </>
@@ -519,6 +584,61 @@ export function App() {
   );
 }
 
+function tableCount(pages: readonly TextPage[]) {
+  return pages.reduce((count, entry) => count + entry.tables.length, 0);
+}
+
+function Tables({ page }: { page: TextPage }) {
+  if (!page.tables.length)
+    return (
+      <p className="reading">
+        No tables were detected on this page. Detection needs ruling lines or at least three aligned
+        text columns.
+      </p>
+    );
+  return (
+    <div className="tables" data-testid="tables">
+      {page.tables.map((table, index) => (
+        <TableView key={keyFor(table)} table={table} index={index} />
+      ))}
+    </div>
+  );
+}
+
+function TableView({ table, index }: { table: Table; index: number }) {
+  // Stable row objects keep row keys stable, even for rows fully covered by a row span.
+  const rows = useMemo(
+    () =>
+      Array.from({ length: table.rowCount }, (_, row) => ({
+        cells: table.cells.filter((cell) => cell.row === row),
+      })),
+    [table],
+  );
+  return (
+    <figure>
+      <figcaption>
+        Table {index + 1} · {table.rowCount} × {table.columnCount} ·{' '}
+        {table.detection === 'ruled' ? 'ruling lines' : 'aligned columns'}
+      </figcaption>
+      <div className="table-scroll">
+        <table>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={keyFor(row)}>
+                {row.cells.map((cell) => (
+                  <td key={keyFor(cell)} rowSpan={cell.rowSpan} colSpan={cell.columnSpan}>
+                    {cell.text}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </figure>
+  );
+}
+
 function Structure({ page }: { page: TextPage }) {
   if (!page.blocks.length)
     return <p className="reading">No text blocks on this page. Try OCR for scanned text.</p>;
@@ -528,6 +648,7 @@ function Structure({ page }: { page: TextPage }) {
         <details key={keyFor(block)}>
           <summary>
             Block {index + 1}
+            {block.tableIndex !== undefined ? ` (table ${block.tableIndex + 1})` : ''}
             <span className="structure-summary">
               {block.lines.length} lines · {block.text.slice(0, 70)}
             </span>
@@ -577,10 +698,12 @@ function Images({
   session,
   images,
   ignored,
+  composite,
 }: {
   session: PdfSession;
   images: readonly EmbeddedImage[];
   ignored: number;
+  composite: boolean;
 }) {
   const [offset, setOffset] = useState(0);
   const visible = useMemo(() => images.slice(offset, offset + PAGE_SIZE), [images, offset]);
@@ -594,6 +717,9 @@ function Images({
       </div>
       <p className="muted">
         Thumbnails for browsing. Downloads keep full resolution, oriented as on the page.
+        {composite
+          ? ' Images with overlays include the text, shapes and images drawn above them.'
+          : ''}
       </p>
       {images.length ? (
         <>
@@ -648,6 +774,7 @@ function ThumbnailPage({
   offset: number;
 }) {
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [composited, setComposited] = useState<Record<string, ExtractedImage['composited']>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [exporting, setExporting] = useState('');
   const [message, setMessage] = useState('');
@@ -664,6 +791,7 @@ function ThumbnailPage({
           const url = URL.createObjectURL(new Blob([preview.data], { type: preview.mimeType }));
           urls.push(url);
           setPreviews((previous) => ({ ...previous, [image.id]: url }));
+          setComposited((previous) => ({ ...previous, [image.id]: preview.composited }));
         } catch (cause) {
           if (controller.signal.aborted) break;
           setErrors((previous) => ({ ...previous, [image.id]: describeError(cause) }));
@@ -694,7 +822,7 @@ function ThumbnailPage({
       if (controller.signal.aborted) return;
       download(
         new Blob([full.data], { type: full.mimeType }),
-        `image-${index + 1}-${full.width}x${full.height}.png`,
+        `image-${index + 1}-${full.width}x${full.height}${full.composited === 'none' ? '' : '-composite'}.png`,
       );
       setMessage(`Downloaded image ${index + 1} at ${full.width} × ${full.height} pixels.`);
     } catch (cause) {
@@ -738,7 +866,16 @@ function ThumbnailPage({
                 {image.occurrences.length === 1 ? 'placement' : 'placements'}
                 {image.hasAlpha ? ' · alpha' : ''}
                 {displayed(image).corrected ? ' · orientation corrected' : ''}
+                {image.occurrences[0]?.overlaid ? ' · overlaid' : ''}
+                {image.occurrences[0]?.clipped ? ' · clipped' : ''}
               </p>
+              {composited[image.id] && composited[image.id] !== 'none' && (
+                <p className="badge">
+                  {composited[image.id] === 'above'
+                    ? 'Composite: with content drawn above'
+                    : 'Composite: whole area, including content below'}
+                </p>
+              )}
               <details>
                 <summary>Placement details</summary>
                 <pre>{JSON.stringify(image.occurrences, null, 2)}</pre>

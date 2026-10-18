@@ -12,5 +12,5 @@
     "noEmit": true
   },
   "include": ["packages/*/src/**/*.ts", "examples/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
-  "exclude": ["vendor", "node_modules", "**/dist", "packages/core/src/engine-extension.js"]
+  "exclude": ["vendor", "node_modules", "**/dist", "packages/core/src/engine-extension/**"]
 }

@@ -66,6 +66,23 @@ const images = await pdf.getImages({ minWidth: 100, minHeight: 100 });
 console.log(`${images.length} images, ${images.ignoredCount} smaller images ignored`);
 ```
 
+## Tables and composite images
+
+`getStructuredText` detects tables from ruling lines and aligned text columns and returns
+them as rows, columns and cells in each page's `tables`; pass `tables: false` to skip it.
+See the [tables guide](guides/tables.md).
+
+When a plan or drawing stacks text, markup or other images over a base image, export the
+image as it appears on the page with `composite: true` (and optionally
+`annotations: true`), either per `extractImage` call or as an `openPdf` default:
+
+```ts
+const view = await pdf.extractImage(image.id, { composite: true });
+console.log(view.composited); // 'above', or 'none' (exact pixels) when nothing is drawn over the image
+```
+
+The [core package page](../core/README.md) describes composites and their limits.
+
 ## Add OCR or persistence
 
 For scanned PDFs and images within mixed-content pages, create a provider with
@@ -83,7 +100,8 @@ return web streams from `get`. See the [storage package page](../storage/README.
 Start with [Getting started](guides/getting-started.md), then configure
 [OCR and assets](guides/ocr-and-assets.md) and [storage and persistence](guides/storage.md).
 The [coordinates and limits](guides/coordinates-and-limits.md) guide describes fidelity,
-resource budgets and lifecycle guarantees.
+resource budgets and lifecycle guarantees, and the [tables](guides/tables.md) guide
+covers table detection.
 
 The [complete browser and Node examples](guides/getting-started.md#run-the-complete-examples)
 store text, full-size images and thumbnails, publish a manifest last, and retrieve stored

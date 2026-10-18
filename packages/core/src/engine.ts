@@ -1,6 +1,7 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: Private pinned engine ABI; never part of core public contracts.
 import type { OpenPdfOptions, PdfInput } from './contracts.js';
-import { checkAbort, PdfExtractError } from './errors.js';
+import type { PageRules, RawImage } from './engine-types.js';
+import { checkAbort, type ErrorCode, PdfExtractError, workerError } from './errors.js';
 export interface Runtime {
   /** Node replaces the default web runtime (window or Web Worker) from its export condition. */
   platform: 'web' | 'node';
@@ -16,6 +17,8 @@ let runtime: Runtime = {
     return new Uint8Array(await r.arrayBuffer());
   },
 };
+
+export type { PageRules, RawImage } from './engine-types.js';
 export function setRuntime(value: Runtime) {
   runtime = value;
 }
@@ -88,6 +91,8 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
   const web = runtime.platform === 'web';
   const dom = web && typeof document !== 'undefined';
+  // Every document gets its own engine worker, ended by close(). The worker extension keeps
+  // per-document state (the last page's operator list), so never share a worker or port.
   let worker: Worker | undefined;
   let pdfWorker: any;
   if (runtime.worker) worker = runtime.worker(base, workerUrl);
@@ -156,13 +161,34 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
       }),
       fatal,
     ]);
+    const scan = async (
+      pageIndex: number,
+      data: Record<string, unknown>,
+      fallback: ErrorCode = 'UNSUPPORTED_IMAGE_FEATURE',
+    ): Promise<any> => {
+      const result = await Promise.race([
+        doc._transport.messageHandler.sendWithPromise('PdfextractScan', { pageIndex, ...data }),
+        fatal,
+      ]);
+      if (result.error) throw workerError(result.error, fallback, pageIndex + 1);
+      return result.value;
+    };
     return {
       doc,
-      async images(
+      /**
+       * Image draws of a page with overlay flags. `degraded` says why the page could only be
+       * read leniently (skipping broken operators), when it could not be read strictly.
+       */
+      async inventory(pageIndex: number) {
+        const value = await scan(pageIndex, { collect: ['images', 'overlay'] });
+        return value as { images: RawImage[]; degraded?: string };
+      },
+      /** Decode one image of a page within the budgets, optionally oriented and PNG-encoded. */
+      async decode(
         pageIndex: number,
-        decodeId?: string,
-        maxPixels?: number,
-        maxBytes?: number,
+        decodeId: string,
+        maxPixels: number,
+        maxBytes: number,
         exportOptions: {
           encode?: boolean;
           maxWidth?: number;
@@ -171,29 +197,58 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
           orient?: readonly number[];
         } = {},
       ) {
-        const result = await Promise.race([
-          doc._transport.messageHandler.sendWithPromise('PdfextractImages', {
-            pageIndex,
-            decodeId,
-            maxPixels,
-            maxBytes,
-            ...exportOptions,
-          }),
+        return scan(pageIndex, {
+          collect: ['images'],
+          decodeId,
+          maxPixels,
+          maxBytes,
+          ...exportOptions,
+        });
+      },
+      /** Engine operator and annotation-mode constants for composite rendering. */
+      OPS: pdfjs.OPS as Record<string, number>,
+      AnnotationMode: pdfjs.AnnotationMode as Record<string, number>,
+      /** Encode an owned RGBA raster as PNG in the worker, optionally as a bounded preview. */
+      async encode(
+        pixels: Uint8Array<ArrayBuffer>,
+        width: number,
+        height: number,
+        maxWidth?: number,
+        maxHeight?: number,
+      ) {
+        return (await Promise.race([
+          doc._transport.messageHandler.sendWithPromise(
+            'PdfextractEncode',
+            { pixels, width, height, maxWidth, maxHeight },
+            [pixels.buffer],
+          ),
           fatal,
-        ]);
-        if (result.error) {
-          const code = result.error.split(':')[0];
-          throw new PdfExtractError(
-            ['RESOURCE_LIMIT_EXCEEDED', 'IMAGE_NOT_FOUND', 'UNSUPPORTED_IMAGE_FEATURE'].includes(
-              code,
-            )
-              ? code
-              : 'UNSUPPORTED_IMAGE_FEATURE',
-            result.error,
-            { context: { pageNumber: pageIndex + 1 } },
-          );
+        ])) as { width: number; height: number; encoded: Uint8Array };
+      },
+      /**
+       * Runs `render` with the page's renders lenient (skipping broken operators, as viewers
+       * do), so content errors that text extraction reports do not leave the render blank.
+       */
+      async renderLeniently<T>(pageIndex: number, render: () => Promise<T>): Promise<T> {
+        const mode = (lenient: boolean) =>
+          Promise.race([
+            doc._transport.messageHandler.sendWithPromise('PdfextractRenderMode', {
+              pageIndex,
+              lenient,
+            }),
+            fatal,
+          ]);
+        await mode(true);
+        try {
+          return await render();
+        } finally {
+          await mode(false);
         }
-        return result.value;
+      },
+      /** Axis-aligned ruling lines of a page in PDF space, for table detection. */
+      async rules(pageIndex: number) {
+        const value = await scan(pageIndex, { collect: ['rules'] }, 'UNSUPPORTED_PDF_FEATURE');
+        return (value as { rules: PageRules }).rules;
       },
       async close() {
         try {
@@ -224,6 +279,10 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
     options.signal?.removeEventListener('abort', abort);
   }
 }
+/** An open engine document handle with the pdfextract worker extensions. */
+export type Engine = Awaited<ReturnType<typeof openEngine>>;
+/** An engine page proxy. */
+export type Page = Awaited<ReturnType<Engine['doc']['getPage']>>;
 export async function inputBytes(input: PdfInput, max: number) {
   if (!(input instanceof Blob) && !(input instanceof Uint8Array) && !(input instanceof ArrayBuffer))
     throw new PdfExtractError('INVALID_ARGUMENT', 'Expected Blob, ArrayBuffer or Uint8Array');

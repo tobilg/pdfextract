@@ -60,7 +60,7 @@ setRuntime({
     } catch (cause) {
       throw new PdfExtractError(
         'OCR_ASSET_UNAVAILABLE',
-        "Full-page OCR (ocr: 'always') in Node needs the optional peer dependency @napi-rs/canvas; install it with `npm install @napi-rs/canvas`",
+        "Page rendering in Node (full-page OCR with ocr: 'always', composite image export) needs the optional peer dependency @napi-rs/canvas; install it with `npm install @napi-rs/canvas`",
         { cause },
       );
     }

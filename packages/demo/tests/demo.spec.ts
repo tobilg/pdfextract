@@ -2,7 +2,13 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { decode } from 'fast-png';
-import { galleryFixture, outlinedFixture } from './gallery-fixture.mjs';
+import {
+  brokenTextFixture,
+  galleryFixture,
+  outlinedFixture,
+  overlayFixture,
+  tableFixture,
+} from './gallery-fixture.mjs';
 
 const fixture = (name: string) => resolve('../../tests/fixtures', name);
 
@@ -251,4 +257,98 @@ test('IMG-06: a minimum image size skips small images and the summary counts the
   await page.getByRole('button', { name: 'Extract again' }).click();
   await expect(page.locator('.result-summary')).toContainText('2 embedded images');
   await expect(page.locator('.result-summary')).not.toContainText('ignored');
+});
+
+test('TABLE-01: table detection is off by default and shows tables when enabled', async ({
+  page,
+}) => {
+  await page.goto('./');
+  await expect(page.getByLabel('Detect tables')).not.toBeChecked();
+  const file = { name: 'table.pdf', mimeType: 'application/pdf', buffer: tableFixture() };
+  await page.locator('#pdf-file').setInputFiles(file);
+  await expect(page.getByRole('status').first()).toContainText('Extraction complete');
+  await expect(page.getByRole('button', { name: 'Tables', exact: true })).toHaveCount(0);
+  await expect(page.locator('.result-summary')).not.toContainText('table');
+  await page.getByLabel('Detect tables').check();
+  await page.getByRole('button', { name: 'Extract again' }).click();
+  await expect(page.getByRole('status').first()).toContainText('Extraction complete');
+  await expect(page.locator('.result-summary')).toContainText('1 table');
+  await expect(page.getByTestId('reading')).toContainText('Bolt\t12\t0.40');
+  await page.getByRole('button', { name: 'Tables', exact: true }).click();
+  const table = page.getByTestId('tables');
+  await expect(table.locator('figcaption')).toContainText('3 × 3 · ruling lines');
+  await expect(table.locator('tr')).toHaveCount(3);
+  await expect(table.locator('tr').nth(1).locator('td')).toHaveText(['Bolt', '12', '0.40']);
+});
+
+test('COMP-01: composite images are off by default and include overlays when enabled', async ({
+  page,
+}) => {
+  await page.goto('./');
+  await expect(page.getByLabel('Show images with overlays (as on the page)')).not.toBeChecked();
+  await expect(page.getByLabel('Include annotations')).toHaveCount(0);
+  const file = { name: 'overlay.pdf', mimeType: 'application/pdf', buffer: overlayFixture() };
+  await page.locator('#pdf-file').setInputFiles(file);
+  await expect(page.getByRole('status').first()).toContainText('Extraction complete');
+  await expect(page.locator('.image-card')).toContainText('overlaid');
+  await expect(page.locator('.image-preview img')).toHaveCount(1);
+  await expect(page.locator('.badge')).toHaveCount(0);
+  await page.getByLabel('Show images with overlays (as on the page)').check();
+  await expect(page.getByLabel('Include annotations')).not.toBeChecked();
+  await page.getByRole('button', { name: 'Extract again' }).click();
+  await expect(page.getByRole('status').first()).toContainText('Extraction complete');
+  await expect(page.locator('.badge')).toHaveText('Composite: with content drawn above');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download full PNG' }).click();
+  const event = await download;
+  expect(event.suggestedFilename()).toBe('image-1-40x20-composite.png');
+  const path = await event.path();
+  if (!path) throw new Error('Missing downloaded PNG file');
+  const png = decode(await readFile(path));
+  const pixel = (x: number, y: number) =>
+    Array.from(png.data.subarray((y * png.width + x) * 4, (y * png.width + x) * 4 + 4));
+  // Blue square over the red raster; untouched areas stay red (canvas tolerance).
+  expect(pixel(15, 10).map((v, i) => Math.abs(v - [0, 0, 255, 255][i]) <= 3)).toEqual([
+    true,
+    true,
+    true,
+    true,
+  ]);
+  expect(pixel(2, 2).map((v, i) => Math.abs(v - [255, 0, 0, 255][i]) <= 3)).toEqual([
+    true,
+    true,
+    true,
+    true,
+  ]);
+});
+
+test('DEGRADED-01 CLIP-01: broken page content is reported with images, and clipped images marked', async ({
+  page,
+}) => {
+  await page.goto('./');
+  await page.locator('#pdf-file').setInputFiles({
+    name: 'broken-text.pdf',
+    mimeType: 'application/pdf',
+    buffer: brokenTextFixture(),
+  });
+  await expect(page.getByRole('status').first()).toContainText(
+    'Extraction finished with warnings.',
+  );
+  // Both images are listed despite page 1's broken text operator.
+  const cards = page.locator('.image-card');
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(0)).toContainText('Page 1');
+  // The badge, not the placement JSON (which lists "clipped" for every image).
+  await expect(cards.nth(0)).toContainText('· clipped');
+  await expect(cards.nth(1)).toContainText('Page 2');
+  await expect(cards.nth(1)).not.toContainText('· clipped');
+  // Text and image-list warnings share the panel.
+  const warnings = page.locator('details.warnings');
+  await expect(warnings.locator('summary')).toHaveText('2 extraction warnings');
+  await warnings.locator('summary').click();
+  await expect(warnings).toContainText('Page 1:');
+  await expect(warnings).toContainText('(TEXT_EXTRACTION_FAILED)');
+  await expect(warnings).toContainText('(IMAGE_INVENTORY_DEGRADED)');
+  await page.getByLabel('Text page').selectOption({ label: '2' });
+  await expect(page.getByTestId('reading')).toContainText('Intact page');
 });

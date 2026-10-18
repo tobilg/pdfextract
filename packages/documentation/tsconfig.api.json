@@ -4,5 +4,5 @@
     "paths": { "@pdfextract/core": ["../core/src/index.ts"] }
   },
   "include": ["../core/src/**/*.ts", "../ocr/src/**/*.ts", "../storage/src/**/*.ts"],
-  "exclude": ["../core/src/engine-extension.js"]
+  "exclude": ["../core/src/engine-extension/**"]
 }

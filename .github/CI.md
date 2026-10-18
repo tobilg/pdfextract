@@ -42,7 +42,8 @@ remain bounded for the large-image and OCR fixtures.
 - PACK-01/02: all three tarballs install into an isolated consumer; Node/browser
   declarations, module isolation, native extraction and real OCR are checked.
 - PACK-03 and FS-01/02: the packed consumer's Node and filesystem checks run under
-  both development Node 22.22.2 and minimum Node 22.12.0. The minimum check runs no Vite.
+  Node 22.12.0, the only Node version in CI and the minimum the packages declare
+  (Node ≥22.12.0). Check another Node locally with `node scripts/minimum-consumer.mjs`.
 - E2E-01, FLOW-01/02 and the browser image/OCR/limit checks run against packed assets
   under a non-root base in Chromium, Firefox and WebKit, including local S3/CORS.
 - Documentation retains strict TypeDoc warnings-as-errors, example typechecking,
@@ -88,7 +89,7 @@ eligibility check, not a publishing workflow.
 
 ## Local equivalent
 
-With Node 22.22.2 and the installed pnpm:
+With Node 22.12.0 and the installed pnpm:
 
 ```sh
 pnpm version:check
@@ -106,7 +107,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 pnpm test:packed-browser
 pnpm --filter @pdfextract/documentation test
 pnpm --filter @pdfextract/demo test
-# After selecting Node 22.12.0, run only the built consumer:
+# Optionally, after selecting another Node version, run only the built consumer:
 node scripts/minimum-consumer.mjs
 ```
 

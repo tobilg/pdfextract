@@ -12,7 +12,7 @@ extraction service, CDN or model download is used, and nothing starts a worker o
 
 | Package | Purpose |
 | --- | --- |
-| [`@pdfextract/core`](packages/core/README.md) | `openPdf`: structured text with coordinates, embedded-image inventory and lossless PNG export |
+| [`@pdfextract/core`](packages/core/README.md) | `openPdf`: structured text with coordinates, table detection, embedded-image inventory and lossless PNG export |
 | [`@pdfextract/ocr`](packages/ocr/README.md) | `createTesseractOcr`: lazy, self-hosted Tesseract OCR provider for core |
 | [`@pdfextract/storage`](packages/storage/README.md) | `/filesystem` and `/s3` adapters with `put/get/head/delete` |
 
@@ -54,6 +54,14 @@ const images = await pdf.getImages({ minWidth: 100, minHeight: 100 });
 console.log(`${images.length} images, ${images.ignoredCount} smaller images ignored`);
 ```
 
+To export an image as it appears on the page, with text, markup and other images that are
+drawn over it composited on top, pass `composite: true` (and optionally
+`annotations: true`) to `openPdf` or `extractImage`:
+
+```ts
+const view = await pdf.extractImage(image.id, { composite: true });
+```
+
 Node works without configuration. Browser bundlers and Web Workers must serve the
 packaged engine, worker and OCR assets themselves; see the
 [asset setup guide](packages/documentation/guides/ocr-and-assets.md).
@@ -64,13 +72,14 @@ More documentation (also on the [documentation site](https://pdfextract-api-docs
 - [OCR and self-hosted assets](packages/documentation/guides/ocr-and-assets.md)
 - [Storage and persistence](packages/documentation/guides/storage.md)
 - [Coordinates and resource limits](packages/documentation/guides/coordinates-and-limits.md)
+- [Tables](packages/documentation/guides/tables.md)
 - Package READMEs: [core](packages/core/README.md), [ocr](packages/ocr/README.md),
   [storage](packages/storage/README.md)
+- [Changelog](CHANGELOG.md)
 
 ## Development
 
-Requirements: Node **22.22.2** (any ≥22.12.0 works for running the packages) and
-pnpm **12.4.2**.
+Requirements: Node **≥22.12.0** and pnpm **12.4.2**.
 
 ```sh
 git clone https://github.com/tobilg/pdfextract.git

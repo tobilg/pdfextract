@@ -11,9 +11,12 @@ export default defineConfig({
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
   webServer: {
-    command: process.env.PDFEXTRACT_PACKED ? 'node scripts/serve-packed.mjs' : 'pnpm dev',
+    // The example serves its own copy of the engine assets: refresh it from the current build.
+    command: process.env.PDFEXTRACT_PACKED
+      ? 'node scripts/serve-packed.mjs'
+      : 'pnpm assets && pnpm dev',
     url: 'http://127.0.0.1:4173/pdfextract-demo/',
     reuseExistingServer: false,
-    timeout: 30000,
+    timeout: 60000,
   },
 });
