@@ -110,6 +110,7 @@ await writeFile(
       'browser/demo-storage.ts',
       'browser/worker-page.ts',
       'browser/extract-worker.ts',
+      'browser/extract.ts',
       'shared/**/*.ts',
     ],
   }),

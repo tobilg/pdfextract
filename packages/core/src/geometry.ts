@@ -1,4 +1,12 @@
-import type { AffineTransform, Box, ImageOrientation, TextBlock, TextSpan } from './contracts.js';
+import type {
+  AffineTransform,
+  Box,
+  ImageOrientation,
+  TextBlock,
+  TextLine,
+  TextSpan,
+} from './contracts.js';
+import type { DetectedTable } from './tables.js';
 export function multiply(m: readonly number[], n: readonly number[]): AffineTransform {
   return [
     m[0] * n[0] + m[2] * n[1],
@@ -8,6 +16,16 @@ export function multiply(m: readonly number[], n: readonly number[]): AffineTran
     m[0] * n[4] + m[2] * n[5] + m[4],
     m[1] * n[4] + m[3] * n[5] + m[5],
   ];
+}
+/** Whether two boxes share more than a hairline area. */
+export function intersects(a: Box, b: Box) {
+  return (
+    Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 0.01 &&
+    Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 0.01
+  );
+}
+export function point(m: readonly number[], x: number, y: number): [number, number] {
+  return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 }
 export function transformBox(b: Box, m: readonly number[]): Box {
   const points = [
@@ -45,7 +63,7 @@ const normalized = (s: string) =>
     .toLocaleLowerCase('en')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
-export function duplicate(ocr: TextSpan, native: TextSpan[]) {
+export function duplicate(ocr: TextSpan, native: readonly TextSpan[]) {
   return native.some(
     (n) =>
       overlap(ocr.bbox, n.bbox) > 0.45 &&
@@ -53,16 +71,24 @@ export function duplicate(ocr: TextSpan, native: TextSpan[]) {
       ` ${normalized(n.text)} `.includes(` ${normalized(ocr.text)} `),
   );
 }
-export function layout(spans: TextSpan[]): TextBlock[] {
+/** Spans on one baseline: the row grouping shared by line building and table detection. */
+function sameRow(a: Box, b: Box) {
+  return Math.abs(a.y - b.y) <= Math.max(2, Math.min(a.height, b.height) * 0.4);
+}
+/**
+ * Order spans into blocks of lines. Detected tables become one block each, with one line per
+ * row and tab-separated cells; their spans are excluded from the remaining layout.
+ */
+export function layout(spans: TextSpan[], tables: readonly DetectedTable[] = []): TextBlock[] {
+  const claimed = new Set(tables.flatMap((t) => t.cellSpans.flat()));
   // Geometric rows; split widely separated columns into independent blocks.
   const rows: TextSpan[][] = [];
   for (const span of spans
-    .filter((s) => s.text.trim())
+    .filter((s) => s.text.trim() && !claimed.has(s))
     .sort((a, b) => a.bbox.y - b.bbox.y || a.bbox.x - b.bbox.x)) {
     const row = rows.find(
       (r) =>
-        Math.abs(r[0].bbox.y - span.bbox.y) <=
-          Math.max(2, Math.min(r[0].bbox.height, span.bbox.height) * 0.4) &&
+        sameRow(r[0].bbox, span.bbox) &&
         span.bbox.x <=
           Math.max(...r.map((s) => s.bbox.x + s.bbox.width)) + Math.max(30, span.bbox.height * 3),
     );
@@ -71,47 +97,86 @@ export function layout(spans: TextSpan[]): TextBlock[] {
   }
   const lines = rows.map((row) => {
     row.sort((a, b) => a.bbox.x - b.bbox.x);
-    const text = row
-        .map((s, i) => {
-          const previous = row[i - 1];
-          const gap = previous ? s.bbox.x - previous.bbox.x - previous.bbox.width : 0;
-          return `${previous && gap > Math.max(1, s.bbox.height * 0.12) && !previous.text.endsWith(' ') && !s.text.startsWith(' ') ? ' ' : ''}${s.text}`;
-        })
-        .join(''),
-      bbox = union(row.map((s) => s.bbox));
-    return { text, bbox, spans: row };
+    return { text: lineText(row), bbox: union(row.map((s) => s.bbox)), spans: row };
   });
+  const units: { bbox: Box; line?: TextLine; table?: TextBlock }[] = [
+    ...lines.map((line) => ({ bbox: line.bbox, line })),
+    ...tables.map((t, index) => ({ bbox: t.table.bbox, table: tableBlock(t, index) })),
+  ];
   // Separate columns only when there is a continuous vertical gutter. A heading
   // spanning the gutter intentionally falls back to top-to-bottom row order.
-  const columns: (typeof lines)[] = [];
-  for (const line of [...lines].sort((a, b) => a.bbox.x - b.bbox.x)) {
+  const columns: (typeof units)[] = [];
+  for (const unit of [...units].sort((a, b) => a.bbox.x - b.bbox.x)) {
     const last = columns.at(-1);
-    const right = last ? Math.max(...last.map((l) => l.bbox.x + l.bbox.width)) : 0;
-    if (last && line.bbox.x - right <= Math.max(30, line.bbox.height * 2)) last.push(line);
-    else columns.push([line]);
+    const right = last ? Math.max(...last.map((u) => u.bbox.x + u.bbox.width)) : 0;
+    const gutter = Math.max(30, unit.line ? unit.bbox.height * 2 : 0);
+    if (last && unit.bbox.x - right <= gutter) last.push(unit);
+    else columns.push([unit]);
   }
   const blocks: TextBlock[] = [];
   for (const column of columns) {
     column.sort((a, b) => a.bbox.y - b.bbox.y || a.bbox.x - b.bbox.x);
     let block: TextBlock | undefined;
-    for (const line of column) {
+    for (const unit of column) {
+      if (unit.table) {
+        blocks.push(unit.table);
+        block = undefined;
+        continue;
+      }
+      const line = unit.line as TextLine;
       const previous = block?.lines.at(-1);
-      if (
+      if (block && previous && sameRow(previous.bbox, line.bbox)) {
+        // Fragments of one row separated by a wide gap (e.g. undetected table cells) stay
+        // one line, read left to right with a tab between fragments.
+        previous.spans = [...previous.spans, ...line.spans].sort((a, b) => a.bbox.x - b.bbox.x);
+        previous.text = lineText(previous.spans);
+        previous.bbox = union([previous.bbox, line.bbox]);
+      } else if (
         block &&
         previous &&
         line.bbox.y - previous.bbox.y - previous.bbox.height <
           Math.max(line.bbox.height, previous.bbox.height) * 0.9
-      ) {
+      )
         block.lines.push(line);
-        block.text = block.lines.map((l) => l.text).join('\n');
-        block.bbox = union(block.lines.map((l) => l.bbox));
-      } else {
-        block = { text: line.text, bbox: line.bbox, lines: [line] };
+      else {
+        block = { text: '', bbox: line.bbox, lines: [line] };
         blocks.push(block);
       }
+      block.text = block.lines.map((l) => l.text).join('\n');
+      block.bbox = union(block.lines.map((l) => l.bbox));
     }
   }
   return blocks;
+}
+/** Join x-ordered spans: a space at word gaps, a tab at gaps wider than a row may bridge. */
+function lineText(row: TextSpan[]) {
+  return row
+    .map((s, i) => {
+      const previous = row[i - 1];
+      if (!previous) return s.text;
+      const gap = s.bbox.x - previous.bbox.x - previous.bbox.width;
+      if (gap > Math.max(30, s.bbox.height * 3)) return `\t${s.text}`;
+      return `${gap > Math.max(1, s.bbox.height * 0.12) && !previous.text.endsWith(' ') && !s.text.startsWith(' ') ? ' ' : ''}${s.text}`;
+    })
+    .join('');
+}
+/** One line per non-empty table row; every grid column contributes a tab-separated field. */
+function tableBlock({ table, cellSpans }: DetectedTable, tableIndex: number): TextBlock {
+  const lines: TextLine[] = [];
+  for (let row = 0; row < table.rowCount; row++) {
+    const cells = table.cells.flatMap((cell, i) => (cell.row === row ? [{ cell, i }] : []));
+    const spans = cells.flatMap(({ i }) => cellSpans[i]);
+    if (!spans.length) continue;
+    const fields = Array.from({ length: table.columnCount }, (_, column) =>
+      (cells.find(({ cell }) => cell.column === column)?.cell.text ?? '').replace(/\s*\n\s*/g, ' '),
+    );
+    lines.push({
+      text: fields.join('\t'),
+      bbox: union(cells.map(({ cell }) => cell.bbox)),
+      spans,
+    });
+  }
+  return { text: lines.map((l) => l.text).join('\n'), bbox: table.bbox, lines, tableIndex };
 }
 
 /** Orientation of a stored raster relative to a placement, from its raster-to-page transform. */

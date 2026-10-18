@@ -1,6 +1,7 @@
 import {
   checkAbort,
   type EmbeddedImage,
+  type ExtractionWarning,
   type OcrProvider,
   openPdf,
   type PdfDocument,
@@ -22,6 +23,11 @@ export interface Result {
   images: readonly EmbeddedImage[];
   /** Images left out by the minimum size filter. */
   ignoredImages: number;
+  /** Image-list diagnostics, such as pages read leniently because of content errors. */
+  imageWarnings: readonly ExtractionWarning[];
+  /** Whether tables were detected and images exported as composites for this result. */
+  tables: boolean;
+  composite: boolean;
 }
 
 export interface SessionOptions {
@@ -32,6 +38,11 @@ export interface SessionOptions {
   /** Optional minimum image width/height in pixels; smaller images are not listed. */
   minWidth?: number;
   minHeight?: number;
+  /** Detect tables (off by default in the demo). */
+  tables: boolean;
+  /** Export overlaid images with everything drawn above them, optionally with annotations. */
+  composite: boolean;
+  annotations: boolean;
 }
 
 /** One tab-local document. No storage adapter, upload endpoint or browser database. */
@@ -67,6 +78,8 @@ export class PdfSession {
       ocr: this.provider,
       assets: { baseUrl: new URL('core/', base) },
       limits: DEMO_LIMITS,
+      composite: options.composite,
+      annotations: options.composite && options.annotations,
     }).then((pdf) => {
       this.pdf = pdf;
       return pdf;
@@ -77,13 +90,21 @@ export class PdfSession {
       ...operation,
       ocr: options.ocr ? options.ocrMode : 'off',
       errorMode: 'collect',
+      tables: options.tables,
     });
     const images = await pdf.getImages({
       ...operation,
       minWidth: options.minWidth,
       minHeight: options.minHeight,
     });
-    return { text, images, ignoredImages: images.ignoredCount };
+    return {
+      text,
+      images,
+      ignoredImages: images.ignoredCount,
+      imageWarnings: images.warnings,
+      tables: options.tables,
+      composite: options.composite,
+    };
   }
 
   async image(id: string, thumbnail: boolean, signal: AbortSignal) {

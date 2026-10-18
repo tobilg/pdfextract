@@ -38,7 +38,7 @@ jobs:
           version: 12.4.2
       - uses: actions/setup-node@v7
         with:
-          node-version: 22.22.2
+          node-version: 22.12.0
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: Check aligned package versions and internal peers
@@ -67,12 +67,6 @@ jobs:
         run: pnpm --filter @pdfextract/documentation test
       - name: Test the production demo in all three browsers
         run: pnpm --filter @pdfextract/demo test
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22.12.0
-          package-manager-cache: false
-      - name: Plain Node minimum consumer
-        run: node scripts/minimum-consumer.mjs
       - name: Upload the verified npm tarballs
         if: inputs.upload_artifacts
         uses: actions/upload-artifact@v7

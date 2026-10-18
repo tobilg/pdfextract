@@ -14,7 +14,8 @@ the release workflow publishes those artifacts without rebuilding them.
 
 Verification uses one Linux job for libraries and both websites, sharing one dependency
 installation, library build and browser installation. Chromium, Firefox and WebKit test
-the packed consumer and production demo; Node 22.22.2 and 22.12.0 test the built packages.
+the packed consumer and production demo; Node 22.12.0, the declared minimum, tests the built
+packages.
 Ordinary pushes/PRs retain a small validation report and failure traces. Release runs
 request all release artifacts; manual Verify runs can opt in with `upload_artifacts`.
 See the [CI coverage and optimization notes](https://github.com/tobilg/pdfextract/blob/main/.github/CI.md).
@@ -31,7 +32,7 @@ registration, publisher setup and any expiry requirements.
 The publishing job uses GitHub-hosted Ubuntu, `id-token: write` and the latest Node 24
 with its bundled npm (trusted publishing needs npm 11.5.1 or newer; the job checks this).
 It only uploads the already verified tarballs, so this does not change the library runtime
-minimum of 22.12.0, which verification tests. npm exchanges GitHub's OIDC identity for short-lived publishing credentials;
+requirement (Node ≥22.12.0), which verification tests. npm exchanges GitHub's OIDC identity for short-lived publishing credentials;
 provenance is automatic for eligible public repositories/packages. Repository metadata
 in every package points at this GitHub repository.
 
@@ -49,6 +50,9 @@ The script preserves `workspace:*` dependencies and external dependency versions
 internal peer ranges become `^X.Y.Z`. With the current workspace links, these metadata
 changes require no lockfile rewrite. No commit, tag or publication is created. Commit
 the manifest changes before creating the matching release tag.
+
+In the same commit, replace `Unreleased` in the version's `CHANGELOG.md` heading with the
+release date and point its compare link at the new tag.
 
 The release workflow runs **only** on pushed `vX.X.X` tags. Branch pushes, prerelease
 suffixes and manual dispatch do not start a release. Each release runs the complete

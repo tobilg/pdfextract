@@ -8,7 +8,8 @@ group: Guides
 Core returns canonical page coordinates in points (1/72 inch), with a top-left origin,
 x right and y down. CropBox, UserUnit and page rotation are applied. Page numbers are
 one-based; `rotation` records the original PDF rotation. Reading order is a deterministic
-baseline/gutter/paragraph heuristic, not semantic recovery for arbitrary tables or scripts.
+baseline/gutter/paragraph heuristic, not semantic recovery for arbitrary scripts. Tables
+are detected heuristically; see [Tables](tables.md).
 
 Each image occurrence has an `imageToPage` transform `[a,b,c,d,e,f]`, mapping top-left
 raster pixel edges to page coordinates: `x′ = a*x + c*y + e`, `y′ = b*x + d*y + f`.
@@ -23,6 +24,12 @@ mirror it horizontally if `mirrored`, then rotate clockwise by `rotation`, to ge
 page view. Smaller tilts are left as stored. Pass `occurrenceId` to choose which
 placement's orientation applies (default: the first), or `preserveOrientation: true` for
 the raster exactly as stored.
+With `composite: true`, an occurrence that is `overlaid` (or clipped, or depends on an
+unsupported graphics state), or any occurrence when `scale` is not 1, is instead rendered
+with everything drawn above it, at its own pixel size times `scale`, cropped to its area;
+clipped-away areas become transparent. Composites must fit 16,777,216 canvas pixels and
+32,767 pixels per side, otherwise they fail with `RESOURCE_LIMIT_EXCEEDED`. See the
+[core package page](../../core/README.md) for details.
 Inline, nested-form, reused and tiny images are included. Auxiliary masks are applied.
 Page clipping is reported on occurrences and does not crop the standalone asset. Explicit
 thumbnail bounds request a separate aspect-preserving nearest-neighbor preview.
@@ -31,7 +38,9 @@ thumbnail bounds request a separate aspect-preserving nearest-neighbor preview.
 whole pixels). Images smaller than either bound are left out, measured as exported by
 default, so quarter-turn placements count with width and height swapped. The result's
 `ignoredCount` reports how many images on the selected pages were left out. The filter
-does not change OCR coverage or which IDs `extractImage` accepts.
+does not change OCR coverage or which IDs `extractImage` accepts. Pages whose content has
+errors are read leniently, skipping the broken operators; the result's `warnings` then
+lists an `IMAGE_INVENTORY_DEGRADED` entry for each such selected page.
 
 ## Tested fidelity envelope
 
@@ -42,8 +51,9 @@ and alpha compare exactly; independent LittleCMS references use documented small
 
 Tested codecs include Flate, JPEG, lossless JPX, CCITT Group4 and JBIG2 MMR generic regions.
 This is not blanket coverage of every codec mode, spot color or malformed profile.
-Unsupported compositing/graphics-state dependencies fail explicitly instead of silently
-returning a screenshot or degraded raster.
+Unsupported compositing/graphics-state dependencies fail explicitly in full exports instead
+of silently returning a screenshot or degraded raster; only an explicitly requested
+composite export renders them.
 
 ## Resource and lifecycle contract
 
@@ -54,6 +64,7 @@ returning a screenshot or degraded raster.
 | Native image | 64 million pixels |
 | Estimated decoded working memory | 1 GiB |
 | OCR working raster | 16 million pixels |
+| Cached ruling lines for table detection | 200,000 lines (about 8 MB) |
 
 Override {@link "@pdfextract/core".PdfLimits} to suit the host. Full exports reject a
 budget failure rather than downscaling. Decoded memory is estimated at 16 bytes/pixel,

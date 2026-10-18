@@ -58,3 +58,41 @@ export function positive(value: number, name: string): number {
     throw new PdfExtractError('INVALID_ARGUMENT', `${name} must be a positive safe integer`);
   return value;
 }
+/**
+ * Apply an operation's errorMode to a failure: 'throw' (default) rethrows it, wrapping foreign
+ * errors as `code`; 'collect' returns the warning to report instead. Cancellation always throws.
+ */
+export function collectOrThrow(
+  error: unknown,
+  errorMode: 'throw' | 'collect' | undefined,
+  signal: AbortSignal,
+  code: ErrorCode,
+  message: string,
+  context: { pageNumber: number; imageId?: string },
+): { code: string; message: string; pageNumber: number; imageId?: string } {
+  checkAbort(signal);
+  if (errorMode !== 'collect')
+    throw error instanceof PdfExtractError
+      ? error
+      : new PdfExtractError(code, message, { cause: error, context });
+  return {
+    code: error instanceof PdfExtractError ? error.code : code,
+    message: String(error),
+    ...context,
+  };
+}
+/**
+ * The error for a failed worker scan. Its message starts with a code for failures the
+ * extension recognizes (`RESOURCE_LIMIT_EXCEEDED: …`); anything else gets `fallback`, the code
+ * of the operation (image errors for image scans, UNSUPPORTED_PDF_FEATURE for rule scans).
+ */
+export function workerError(message: string, fallback: ErrorCode, pageNumber: number) {
+  const code = message.split(':')[0];
+  return new PdfExtractError(
+    ['RESOURCE_LIMIT_EXCEEDED', 'IMAGE_NOT_FOUND', 'UNSUPPORTED_IMAGE_FEATURE'].includes(code)
+      ? (code as ErrorCode)
+      : fallback,
+    message,
+    { context: { pageNumber } },
+  );
+}

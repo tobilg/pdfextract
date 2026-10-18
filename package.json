@@ -10,7 +10,7 @@
     "version:sync": "node scripts/sync-versions.mjs",
     "version:check": "node scripts/sync-versions.mjs --check",
     "build": "node scripts/build.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p packages/core/tsconfig.engine.json",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:packed-browser": "PDFEXTRACT_PACKED=1 playwright test",

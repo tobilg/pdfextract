@@ -15,7 +15,12 @@ export interface OperationOptions {
 
 /** Progress within one extraction stage; totals and counters are not a document-wide percentage. */
 export interface ProgressEvent {
-  /** Current operation phase. */
+  /**
+   * Current operation phase. `images` covers the image inventory: `getImages` reports every
+   * requested page (all pages without `pages`) on every call, and OCR `auto` every selected page,
+   * whether the page is scanned now or already known; other pages are reported only when they
+   * are scanned to complete the document's inventory (as `extractImage` does on first use).
+   */
   stage: 'open' | 'text' | 'images' | 'ocr' | 'export';
   /** Completed units in this stage. */
   completed: number;
@@ -41,6 +46,13 @@ export interface PdfLimits {
   maxDecodedBytes?: number;
   /** Maximum pixels in a separately bounded OCR working raster; default 16 million. */
   maxOcrPixels?: number;
+  /**
+   * Ruling lines kept for table detection across the document; default 200,000 (about 8 MB).
+   * Pages scanned for tables keep their lines for later calls; beyond this budget the pages
+   * cached first are dropped and scanned again when needed. A page draws at most 5,000 lines,
+   * so a budget below that can leave a busy page uncached.
+   */
+  maxCachedRuleLines?: number;
 }
 
 /** Engine assets, password, resource budgets and an optional caller-owned OCR provider for a whole PDF. */
@@ -51,6 +63,16 @@ export interface OpenPdfOptions extends OperationOptions {
   ocr?: OcrProvider;
   /** Resource budget overrides; full image export fails clearly instead of silently downscaling. */
   limits?: PdfLimits;
+  /**
+   * Default for {@link ExtractImageOptions.composite}: export images with everything drawn above
+   * them, as they appear on the page. Default false.
+   */
+  composite?: boolean;
+  /**
+   * Default for {@link ExtractImageOptions.annotations}: include annotation appearances in
+   * composites and count them in {@link ImageOccurrence.overlaid}. Default false.
+   */
+  annotations?: boolean;
   /** Self-hosted engine locations. Node defaults resolve included package assets; browser bundlers should set baseUrl. */
   assets?: {
     /** Base URL of the copied core asset directory, including sibling codecs, fonts and notices. */
@@ -70,6 +92,12 @@ export interface StructuredTextOptions extends OperationOptions {
   pages?: readonly number[];
   /** throw rejects on failure (default); collect returns partial results with diagnostics. */
   errorMode?: 'throw' | 'collect';
+  /**
+   * Detect tables from ruling lines and aligned text columns (default true). Detected tables are
+   * returned in {@link TextPage.tables} and read row by row in the text. false skips detection
+   * and the extra vector-graphics scan it needs on pages with column-like text.
+   */
+  tables?: boolean;
 }
 
 /** Inventory selection. Images are enumerated without retaining all decoded rasters. */
@@ -84,12 +112,23 @@ export interface GetImagesOptions extends OperationOptions {
   minWidth?: number;
   /** Positive minimum height in pixels, measured like `minWidth`. Omitted means no height filter. */
   minHeight?: number;
+  /**
+   * Count annotation appearances in {@link ImageOccurrence.overlaid}, as `extractImage` does with
+   * its `annotations` option. Defaults to the document's `annotations` option (false).
+   */
+  annotations?: boolean;
 }
 
 /** Embedded images returned by {@link PdfDocument.getImages}: an array with filter statistics. */
 export interface ImageList extends ReadonlyArray<EmbeddedImage> {
   /** Images on the selected pages left out by `minWidth`/`minHeight`; 0 when unfiltered. Not part of JSON output. */
   readonly ignoredCount: number;
+  /**
+   * `IMAGE_INVENTORY_DEGRADED` for selected pages whose content has errors (for example text
+   * shown before any font is set): they were read leniently, skipping broken operators, so
+   * images in the broken part may be missing. Empty otherwise. Not part of JSON output.
+   */
+  readonly warnings: readonly ExtractionWarning[];
 }
 
 /** Export options. Omitting both bounds requests native dimensions; supplying a bound explicitly requests a thumbnail. */
@@ -105,6 +144,23 @@ export interface ExtractImageOptions extends OperationOptions {
    * By default, mirrored and quarter-turn placements are corrected losslessly (see {@link ImageOrientation}).
    */
   preserveOrientation?: boolean;
+  /**
+   * Render the image together with everything the page draws above it (text, vector graphics,
+   * other images) in drawing order, cropped to the image's area. Defaults to the document's
+   * `composite` option (false). Occurrences that are not overlaid, clipped, covered by an
+   * included annotation or dependent on an unsupported graphics state export the exact stored
+   * pixels instead, unless `scale` is set; see {@link ExtractedImage.composited}.
+   */
+  composite?: boolean;
+  /** Include annotation appearances (stamps, markup, form fields) in a composite. Defaults to the document's `annotations` option (false). */
+  annotations?: boolean;
+  /**
+   * Positive factor applied to the native size of a composite; default 1. Any other value always
+   * renders the composite (`composited` is `'above'`, or `'page'` when the draw cannot be
+   * isolated), even for occurrences that would otherwise export the exact stored pixels.
+   * Ignored without `composite`.
+   */
+  scale?: number;
 }
 
 /** An independently owned PNG export that remains valid after the PDF is closed. */
@@ -121,22 +177,36 @@ export interface ExtractedImage {
   height: number;
   /** full preserves native dimensions; thumbnail is an explicitly bounded preview. */
   variant: 'full' | 'thumbnail';
+  /**
+   * none: the exact stored pixels. above: a rendered composite of the image and everything
+   * drawn above it. page: a rendered composite in which the image's own draw could not be
+   * isolated, so content drawn below shows through transparent pixels too.
+   */
+  composited: 'none' | 'above' | 'page';
 }
 
 /** An open PDF handle. Operations are serialized per document; release it with close in a finally block. */
 export interface PdfDocument {
   /** Total pages in the input PDF, independent of per-operation page selection. */
   readonly pageCount: number;
-  /** Extract native/OCR text with deterministic geometry-based ordering. Auto OCR includes image regions on mixed pages. */
+  /**
+   * Extract native/OCR text with deterministic geometry-based ordering. Auto OCR includes image
+   * regions on mixed pages. Tables are detected by default and returned in each page's `tables`;
+   * each table also reads row by row, with tab-separated cells, in the text.
+   */
   getStructuredText(options?: StructuredTextOptions): Promise<StructuredText>;
   /**
    * Enumerate appearances and placements, including inline/nested/reused images. Raster decoding
    * happens on demand. `minWidth`/`minHeight` leave out small images; all images are listed by default.
+   * Each occurrence reports whether the page draws something above it (`overlaid`).
    */
   getImages(options?: GetImagesOptions): Promise<ImageList>;
   /**
    * Export a selected appearance as owned PNG bytes, oriented as its placement appears on the page
    * unless `preserveOrientation` is set. Unknown IDs fail; full export never silently downscales.
+   * With `composite` (or the document's `composite` default), an overlaid or clipped occurrence
+   * (see {@link ExtractImageOptions.composite} for all cases) is rendered with everything drawn
+   * above it, cropped to its area; `composited` reports which.
    */
   extractImage(id: ImageId, options?: ExtractImageOptions): Promise<ExtractedImage>;
   /** Idempotently cancel queued work and join engine cleanup. Returned data remains valid; the OCR provider stays open. */
@@ -200,7 +270,10 @@ export interface TextLine {
   spans: TextSpan[];
 }
 
-/** Lines grouped heuristically by columns and paragraph spacing. */
+/**
+ * Lines grouped heuristically by columns and paragraph spacing. A detected table forms one
+ * block with one line per table row, its cells separated by tab characters.
+ */
 export interface TextBlock {
   /** Text derived from this block’s ordered lines. */
   text: string;
@@ -208,6 +281,41 @@ export interface TextBlock {
   bbox: Box;
   /** Lines in deterministic geometric reading order. */
   lines: TextLine[];
+  /** Index into {@link TextPage.tables} when this block is a detected table. */
+  tableIndex?: number;
+}
+
+/** One cell of a detected table. Bounds are the cell's grid area, not only its text. */
+export interface TableCell {
+  /** Zero-based row of the cell's top-left grid position. */
+  row: number;
+  /** Zero-based column of the cell's top-left grid position. */
+  column: number;
+  /** Number of grid rows the cell covers; greater than 1 only for ruled merged cells. */
+  rowSpan: number;
+  /** Number of grid columns the cell covers; greater than 1 only for ruled merged cells. */
+  columnSpan: number;
+  /** Cell text with its lines joined by newlines; empty for an empty cell. */
+  text: string;
+  /** Cell area in canonical page points. */
+  bbox: Box;
+}
+
+/** A heuristically detected table; all geometry uses canonical page points. */
+export interface Table {
+  /** Table area in canonical page points. */
+  bbox: Box;
+  /** Number of grid rows. */
+  rowCount: number;
+  /** Number of grid columns. */
+  columnCount: number;
+  /**
+   * ruled: the cell grid comes from drawn horizontal and vertical lines, so merged cells are known.
+   * aligned: columns are inferred from text alignment, optionally between horizontal rules.
+   */
+  detection: 'ruled' | 'aligned';
+  /** Cells in row-major order, empty cells included; positions covered by a merged cell are omitted. */
+  cells: TableCell[];
 }
 
 /** Text and diagnostics in top-left page points, with CropBox, UserUnit and rotation applied. */
@@ -224,6 +332,8 @@ export interface TextPage {
   fullText: string;
   /** Geometrically ordered text blocks; complex semantic reading order is not guaranteed. */
   blocks: TextBlock[];
+  /** Detected tables in reading order; empty when none were found or detection was disabled. */
+  tables: Table[];
   /** Coverage outcome. A failed region cannot be hidden by another region succeeding. */
   ocrStatus: 'disabled' | 'not-needed' | 'performed' | 'partial' | 'failed';
   /** Page-local limitations and collected errors. */
@@ -272,10 +382,22 @@ export interface ImageOccurrence {
   bbox: Box;
   /** Maps top-left source raster pixel edges into canonical page coordinates. */
   imageToPage: AffineTransform;
-  /** Whether a clipping path affected placement; standalone export still preserves the whole source image. */
+  /**
+   * Whether a clip cuts this placement. False when every clip in effect is an axis-aligned
+   * rectangle (including Form XObject bounds) containing the whole image, such as a page-wide
+   * clip; true for clips that cut into it and, conservatively, for non-rectangular, rotated and
+   * text clips. Standalone export still preserves the whole source image.
+   */
   clipped: boolean;
   /** Orientation of the stored raster relative to this placement; exports correct it by default. */
   originalOrientation: ImageOrientation;
+  /**
+   * Whether the page draws something visible above this placement within its area: text,
+   * vector graphics or another image, within the clip area (annotations too with the
+   * `annotations` option of `getImages` or the document). Text extents are estimated, so this
+   * errs towards true; invisible text such as an OCR layer does not count.
+   */
+  overlaid: boolean;
 }
 
 /** A source-resolution embedded raster appearance. Auxiliary masks are applied to the asset, not listed separately. */

@@ -70,6 +70,16 @@ for (const [needle, replacement] of [
     '    SCALE_MATRIX.a = 1 / scaleX;',
     '    SCALE_MATRIX ??= new DOMMatrix();\n    SCALE_MATRIX.a = 1 / scaleX;',
   ],
+  // Composite image export: an optional per-render filter (set on the canvas context) may
+  // skip operators, e.g. everything painted below the selected image.
+  [
+    '    this.ctx = canvasCtx;\n    this.current = new CanvasExtraState(',
+    '    this.ctx = canvasCtx;\n    this.pdfextractFilter = canvasCtx.pdfextractFilter;\n    this.current = new CanvasExtraState(',
+  ],
+  [
+    '      if (fnId !== OPS.dependency) {\n        this[fnId].apply(this, argsArray[i]);',
+    '      if (fnId !== OPS.dependency) {\n        if (!this.pdfextractFilter?.(fnId, argsArray[i], this)) this[fnId].apply(this, argsArray[i]);',
+  ],
 ]) {
   if (display.split(needle).length !== 2)
     throw new Error(`PDF.js canvas patch anchor drift: ${needle}`);
@@ -84,6 +94,49 @@ function replaceOnce(needle, value) {
   if (worker.split(needle).length !== 2) throw new Error(`PDF.js patch anchor drift: ${needle}`);
   worker = worker.replace(needle, value);
 }
+/*
+ * packages/core/src/engine-extension/ runs inside this exact worker and relies on these
+ * private PDF.js internals (declared for its type check in packages/core/types/
+ * engine-internals.d.ts); re-check each of them when upgrading pdfjs-dist:
+ * - PartialEvaluator, OperatorList and WorkerTask to build a page's operator list, with
+ *   buildPaintImageXObject overridden to record image draws as operator 1001 and
+ *   handleSetFont wrapped to read the loaded font from its 6th argument (`state.font`):
+ *   fontMatrix, vertical, defaultVMetrics, and glyph.vmetric in showText (checked below)
+ * - page._localIdFactory, evaluator._pdfFunctionFactory, page.xref.fetch with Ref.fromString
+ *   (checked below) and page.xref._cacheMap (checked below), cleared after each decode
+ * - OPS names (checked at runtime by pdfextractConfigure) and argument layouts:
+ *   constructPath [paintOp, [Float32Array path], minMax], setFont [name, size],
+ *   showText [glyphs with width/isSpace], setGState [[key, value]...],
+ *   paintFormXObjectBegin [matrix, bbox], setFillRGBColor/setStrokeRGBColor [r, g, b] in 0..255
+ * - DrawOPS path opcodes (checked below)
+ * - PDFImage, ImageKind, IccColorSpace, CmykICCBasedCS, QCMS, initSync and Name for decoding
+ *   (their presence is checked at runtime by pdfextractConfigure)
+ * - In pdf.mjs: CanvasGraphics construction and executeOperatorList (patched above) and the
+ *   paint operator argument layouts read by the composite filter in composite.ts
+ * - Page.evaluatorOptions (assigned in the Page constructor, checked below), read by
+ *   Page.getOperatorList for renders and overridden per page by pdfextractRenderMode
+ * - On the main thread (engine.ts): doc._transport.messageHandler to call the worker handlers
+ */
+for (const [anchor, use] of [
+  [
+    '  async handleSetFont(resources, fontArgs, fontRef, operatorList, task, state, ',
+    'the handleSetFont wrapper in pdfextractPage (state argument position)',
+  ],
+  ['    state.font = translated.font;', 'the handleSetFont wrapper in pdfextractPage (state.font)'],
+  ['  static fromString(str) {', 'pdfextractDecode (Ref.fromString)'],
+  ['    this._cacheMap = new Map();', 'pdfextractDecode (xref._cacheMap)'],
+  ['    this.evaluatorOptions = evaluatorOptions;', 'pdfextractRenderMode (Page.evaluatorOptions)'],
+])
+  if (worker.split(anchor).length !== 2)
+    throw new Error(`PDF.js internals drift (${anchor.trim()}): update ${use}`);
+if (
+  !worker.includes(
+    'const DrawOPS = {\n  moveTo: 0,\n  lineTo: 1,\n  curveTo: 2,\n  closePath: 3\n};',
+  )
+)
+  throw new Error(
+    'PDF.js DrawOPS layout drift: update pdfextractSubpaths in engine-extension/walk.js',
+  );
 replaceOnce(
   'function fetchSync(url) {',
   `function fetchSync(url) {\n const local = pdfextractSyncAssets.get(url.split('/').pop()); if (local) return local;`,
@@ -91,13 +144,20 @@ replaceOnce(
 replaceOnce(
   '    handler.on("GetData", function (data) {',
   `    handler.on("PdfextractConfigure", data => pdfextractConfigure(data));
-    handler.on("PdfextractImages", async data => {
+    handler.on("PdfextractScan", async data => {
       try { return {value: await pdfextractScan(pdfManager, handler, data)}; }
       catch (error) { return {error: String(error?.message ?? error)}; }
     });
+    handler.on("PdfextractEncode", data => pdfextractEncodeRaster(data));
+    handler.on("PdfextractRenderMode", data => pdfextractRenderMode(pdfManager, data));
     handler.on("GetData", function (data) {`,
 );
-worker += `\n${await readFile('packages/core/src/engine-extension.js', 'utf8')}`;
+// The engine extension: plain scripts sharing the worker's module scope, in this order, after
+// the PNG encoder import they use.
+const PARTS = ['types', 'configure', 'page', 'walk', 'collectors', 'decode'];
+worker += "\nimport { encodePng as pdfextractEncodePng } from './png.mjs';\n";
+for (const part of PARTS)
+  worker += `\n${await readFile(`packages/core/src/engine-extension/${part}.js`, 'utf8')}`;
 await writeFile(`${dest}/pdf.worker.mjs`, worker);
 await cp('packages/core/src/node-worker-bootstrap.mjs', `${dest}/node-worker-bootstrap.mjs`);
 await mkdir('packages/core/THIRD_PARTY_NOTICES', { recursive: true });

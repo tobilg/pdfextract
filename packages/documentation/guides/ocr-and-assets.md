@@ -62,8 +62,9 @@ raster pixels. Core maps them back into page coordinates. Missing/broken assets 
 with `OCR_ASSET_UNAVAILABLE`; recognition failures use `OCR_FAILED`. Collect mode preserves
 failed regions as partial results, even when another region succeeds.
 
-Only Node full-page OCR (`always`) needs the native canvas addon. It is an optional peer
-dependency of core and is not installed automatically: run `npm install @napi-rs/canvas`
-to enable that mode, otherwise it rejects with `OCR_ASSET_UNAVAILABLE`. Native text,
-embedded-image exports and automatic image-region OCR never load it. Browsers and Web
+Only Node full-page OCR (`always`) and composite image export (`composite: true`) need
+the native canvas addon. It is an optional peer dependency of core and is not installed
+automatically: run `npm install @napi-rs/canvas` to enable them, otherwise full-page OCR
+rejects with `OCR_ASSET_UNAVAILABLE` and composites with `UNSUPPORTED_IMAGE_FEATURE`.
+Native text, exact embedded-image exports and automatic image-region OCR never load it. Browsers and Web
 Workers use their built-in canvas.

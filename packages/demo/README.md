@@ -40,10 +40,19 @@ and WebKit, without Vite transforms or workspace source aliases.
 
 - Reads a whole File and shows native/OCR text, page dimensions, blocks, lines, span
   geometry, provenance, confidence, warnings and page JSON. Download full structured
-  JSON or plain text.
+  JSON or plain text. The warnings panel also lists image-list warnings, such as pages
+  whose broken content was read leniently (`IMAGE_INVENTORY_DEGRADED`).
 - Optional minimum image width/height (pixels) skips smaller images; the result summary
   shows how many were ignored. Empty fields list every image.
-- Lists embedded raster appearances and their distinct placements. Eight thumbnails
+- **Detect tables** (off by default) runs table detection: the summary and page details
+  count tables, the reading view shows them row by row with tab-separated cells, and a
+  **Tables** view renders each table with its merged cells.
+- **Show images with overlays** (off by default) exports overlaid images as they appear
+  on the page, with the text, shapes and images drawn above them; **Include annotations**
+  adds annotation appearances. Cards mark overlaid images and composite thumbnails, and
+  composite downloads end in `-composite.png`.
+- Lists embedded raster appearances and their distinct placements; cards mark images
+  whose first placement is clipped. Eight thumbnails
   are decoded sequentially per gallery page. Downloading an image requests a separate
   full-resolution PNG at its native resolution, oriented as it appears on the page.
 - Reports extraction/export progress, supports cancellation and invalid/password/
