@@ -16,6 +16,7 @@
   "plugin": ["./scripts/package-readmes.mjs"],
   "projectDocuments": [
     "guides/getting-started.md",
+    "guides/text-and-markdown.md",
     "guides/ocr-and-assets.md",
     "guides/storage.md",
     "guides/coordinates-and-limits.md",

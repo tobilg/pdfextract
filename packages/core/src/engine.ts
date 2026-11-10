@@ -1,12 +1,16 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: Private pinned engine ABI; never part of core public contracts.
 import type { OpenPdfOptions, PdfInput } from './contracts.js';
-import type { PageRules, RawImage } from './engine-types.js';
+import type { PageFonts, PageGlyphs, PageRules, RawImage } from './engine-types.js';
 import { checkAbort, type ErrorCode, PdfExtractError, workerError } from './errors.js';
 export interface Runtime {
   /** Node replaces the default web runtime (window or Web Worker) from its export condition. */
   platform: 'web' | 'node';
   read(url: URL, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>>;
   canvas?(width: number, height: number): { canvas: any; context: any };
+  /**
+   * A port to an engine worker for one document. The port's `release()`, when present, hands
+   * the worker back for a later document after a clean close; `terminate()` ends it.
+   */
   worker?(base: URL, workerUrl: string): any;
 }
 let runtime: Runtime = {
@@ -18,7 +22,7 @@ let runtime: Runtime = {
   },
 };
 
-export type { PageRules, RawImage } from './engine-types.js';
+export type { PageFonts, PageGlyphs, PageRules, RawImage } from './engine-types.js';
 export function setRuntime(value: Runtime) {
   runtime = value;
 }
@@ -77,6 +81,33 @@ class NoFilterFactory {
   }
   destroy() {}
 }
+/**
+ * Engine assets every document sends its worker (copied, not transferred), read once per URL.
+ * A failed read is not kept, so a later document tries again.
+ */
+const assets = new Map<string, Promise<Uint8Array>>();
+function asset(url: URL, signal?: AbortSignal) {
+  let read = assets.get(url.href);
+  if (!read) {
+    read = runtime.read(url);
+    assets.set(url.href, read);
+    read.catch(() => assets.delete(url.href));
+  }
+  if (!signal) return read;
+  checkAbort(signal);
+  return Promise.race([
+    read,
+    new Promise<never>((_, reject) =>
+      signal.addEventListener(
+        'abort',
+        () => reject(new PdfExtractError('ABORTED', 'Open cancelled')),
+        {
+          once: true,
+        },
+      ),
+    ),
+  ]);
+}
 export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPdfOptions) {
   const base = new URL(options.assets?.baseUrl ?? './assets/', import.meta.url);
   const moduleUrl = new URL('pdf.mjs', base).href;
@@ -91,9 +122,11 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
   const web = runtime.platform === 'web';
   const dom = web && typeof document !== 'undefined';
-  // Every document gets its own engine worker, ended by close(). The worker extension keeps
-  // per-document state (the last page's operator list), so never share a worker or port.
-  let worker: Worker | undefined;
+  // Every document gets its own engine worker and port at a time, ended by close() or, after a
+  // clean close, released for a later document (Node): PDF.js keeps each document's state in
+  // its own handler, and the worker extension keys its page cache by document. Never share a
+  // worker between open documents.
+  let worker: (Worker & { release?(): Promise<void> }) | undefined;
   let pdfWorker: any;
   if (runtime.worker) worker = runtime.worker(base, workerUrl);
   else if (typeof Worker !== 'undefined') worker = new Worker(workerUrl, { type: 'module' });
@@ -151,8 +184,8 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
     const doc = await Promise.race([task.promise, fatal]);
     checkAbort(options.signal);
     const assets = await Promise.all([
-      runtime.read(new URL('qcms_bg.wasm', wasmBase), options.signal),
-      runtime.read(new URL('iccs/CGATS001Compat-v2-micro.icc', base), options.signal),
+      asset(new URL('qcms_bg.wasm', wasmBase), options.signal),
+      asset(new URL('iccs/CGATS001Compat-v2-micro.icc', base), options.signal),
     ]);
     await Promise.race([
       doc._transport.messageHandler.sendWithPromise('PdfextractConfigure', {
@@ -195,6 +228,8 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
           maxHeight?: number;
           /** Linear part of an orientation transform; omitted keeps the stored orientation. */
           orient?: readonly number[];
+          /** Resize of an unencoded OCR raster after orientation: enlarged above 1, reduced below. */
+          scale?: number;
         } = {},
       ) {
         return scan(pageIndex, {
@@ -245,17 +280,38 @@ export async function openEngine(bytes: Uint8Array<ArrayBuffer>, options: OpenPd
           await mode(false);
         }
       },
+      /**
+       * Names and weights of the fonts a page's content loads (by the loaded name text content
+       * items refer to), its count of filled paths and its ruling lines, from one lenient scan.
+       */
+      async style(pageIndex: number) {
+        const value = await scan(
+          pageIndex,
+          { collect: ['fonts', 'fills', 'rules'] },
+          'UNSUPPORTED_PDF_FEATURE',
+        );
+        return value as { fonts: PageFonts; fills: number; rules: PageRules };
+      },
+      /** Positioned glyphs of a page's upright horizontal text, for math. */
+      async glyphs(pageIndex: number) {
+        const value = await scan(pageIndex, { collect: ['glyphs'] }, 'UNSUPPORTED_PDF_FEATURE');
+        return (value as { glyphs: PageGlyphs }).glyphs;
+      },
       /** Axis-aligned ruling lines of a page in PDF space, for table detection. */
       async rules(pageIndex: number) {
         const value = await scan(pageIndex, { collect: ['rules'] }, 'UNSUPPORTED_PDF_FEATURE');
         return (value as { rules: PageRules }).rules;
       },
       async close() {
+        let clean = false;
         try {
           await task.destroy();
+          clean = !workerFailed;
         } finally {
-          await worker?.terminate();
           pdfWorker?.destroy();
+          // A worker that served its document without failing serves another (Node).
+          if (clean && worker?.release) await worker.release();
+          else await worker?.terminate();
         }
       },
     };

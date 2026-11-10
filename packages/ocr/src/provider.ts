@@ -2,8 +2,7 @@
 // is selected by the package export conditions, never by sniffing globals at runtime.
 import type { OcrProvider, OcrRaster, OcrResult, OperationOptions } from '@pdfextract/core';
 import { checkAbort, PdfExtractError, positive } from '@pdfextract/core';
-import { encode } from 'fast-png';
-import type { Worker, WorkerOptions } from 'tesseract.js';
+import type { PSM, Worker, WorkerOptions } from 'tesseract.js';
 
 interface RawWorker {
   terminate(): unknown;
@@ -19,7 +18,10 @@ type WorkerFactory = (
 export interface TesseractOcrOptions {
   /** Nonempty Tesseract language identifiers, for example ['eng', 'deu']. Supply matching traineddata.gz files. */
   languages: readonly string[];
-  /** Maximum reusable worker count, 1–8; defaults to one. */
+  /**
+   * Maximum reusable worker count, 1–8; defaults to half the logical processors, at least one
+   * and at most four. Workers start only when that many rasters are recognized at once.
+   */
   concurrency?: number;
   /** Self-hosted asset locations; languageDataBaseUrl is required when recognition starts. */
   assets?: {
@@ -31,11 +33,29 @@ export interface TesseractOcrOptions {
     languageDataBaseUrl?: string | URL;
   };
 }
+/**
+ * Grayscale copy of an RGBA raster, composited over white. Tesseract thresholds colour images
+ * per channel, where coloured text (green or blue on white) can vanish; luminance keeps it.
+ */
+function luminance({ data, width, height }: OcrRaster): Uint8Array {
+  const gray = new Uint8Array(width * height);
+  for (let p = 0, i = 0; p < gray.length; p++, i += 4) {
+    const alpha = data[i + 3] / 255,
+      luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    gray[p] = Math.round(luma * alpha + 255 * (1 - alpha));
+  }
+  return gray;
+}
+/** Half the logical processors (Node 21+ and browsers report them), one to four. */
+export function defaultConcurrency(): number {
+  const cores = Number(globalThis.navigator?.hardwareConcurrency);
+  return Number.isFinite(cores) ? Math.max(1, Math.min(4, Math.floor(cores / 2))) : 1;
+}
 export function createProvider(
   options: TesseractOcrOptions,
   platform: 'web' | 'node',
 ): OcrProvider {
-  const concurrency = positive(options.concurrency ?? 1, 'concurrency');
+  const concurrency = positive(options.concurrency ?? defaultConcurrency(), 'concurrency');
   if (
     concurrency > 8 ||
     !options.languages.length ||
@@ -50,13 +70,14 @@ export function createProvider(
   const closing = new AbortController();
   const slots = Array.from({ length: concurrency }, () => ({
     tail: Promise.resolve() as Promise<unknown>,
+    /** Recognitions queued on or running in this slot. */
+    pending: 0,
     worker: undefined as Worker | undefined,
     loading: undefined as Promise<Worker> | undefined,
     raw: undefined as RawWorker | undefined,
     reject: undefined as ((reason: unknown) => void) | undefined,
     progress: undefined as OperationOptions['onProgress'],
   }));
-  let next = 0;
   const terminations = new Set<Promise<unknown>>();
   function terminate(slot: (typeof slots)[number], reason: unknown) {
     slot.reject?.(reason);
@@ -150,20 +171,37 @@ export function createProvider(
         })();
       const worker = await Promise.race([slot.loading, aborted]);
       checkAbort(signal);
-      const png = encode({
-        width: raster.width,
-        height: raster.height,
-        data: raster.data,
-        channels: 4,
-      });
-      const result = await Promise.race([
-        worker.recognize(
-          png as unknown as Parameters<Worker['recognize']>[0],
-          { rotateAuto: false, rotateRadians: 0 },
-          { text: true, blocks: true },
-        ),
-        aborted,
-      ]);
+      // Tesseract's library default is a single uniform text block (PSM 6), which reads straight
+      // across columns. Use automatic page segmentation (PSM 3), as the tesseract CLI does, and
+      // pass the raster's resolution so size heuristics need not guess. 0 restores estimation.
+      const dpi = raster.dpi && Math.round(Math.min(2400, Math.max(70, raster.dpi)));
+      // A binary PNM (P5): a header and the gray samples, which Tesseract's image library
+      // reads as is. A PNG costs a compression here and a decompression in the recognizer.
+      const header = new TextEncoder().encode(`P5\n${raster.width} ${raster.height}\n255\n`),
+        gray = luminance(raster),
+        image = new Uint8Array(header.length + gray.length);
+      image.set(header);
+      image.set(gray, header.length);
+      const read = async (mode: string) => {
+        await Promise.race([
+          worker.setParameters({
+            tessedit_pageseg_mode: mode as PSM,
+            user_defined_dpi: String(dpi || 0),
+          }),
+          aborted,
+        ]);
+        checkAbort(signal);
+        return Promise.race([
+          worker.recognize(
+            image as unknown as Parameters<Worker['recognize']>[0],
+            { rotateAuto: false, rotateRadians: 0 },
+            { text: true, blocks: true },
+          ),
+          aborted,
+        ]);
+      };
+      // A raster of scattered words (handwriting, forms) is read in sparse-text mode (PSM 11).
+      const result = await read(raster.layout === 'sparse' ? '11' : '3');
       checkAbort(signal);
       const box = (b: { x0: number; y0: number; x1: number; y1: number }) => ({
         x: b.x0,
@@ -203,11 +241,24 @@ export function createProvider(
     }
   }
   return {
+    concurrency,
     recognize(raster, op = {}) {
       if (closed)
         return Promise.reject(new PdfExtractError('DOCUMENT_CLOSED', 'OCR provider closed'));
-      const slot = slots[next++ % slots.length];
-      const task = slot.tail.then(() => recognize(slot, raster, op));
+      // The least busy slot, a started worker before one still to start: rasters recognized
+      // one at a time reuse one worker, and further workers start only for overlapping work.
+      const slot = slots.reduce((best, s) =>
+        s.pending < best.pending || (s.pending === best.pending && s.worker && !best.worker)
+          ? s
+          : best,
+      );
+      slot.pending++;
+      // Counted down before the caller sees the outcome, so its next raster finds the slot idle.
+      const task = slot.tail
+        .then(() => recognize(slot, raster, op))
+        .finally(() => {
+          slot.pending--;
+        });
       slot.tail = task.catch(() => {});
       return task;
     },

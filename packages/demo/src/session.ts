@@ -28,6 +28,8 @@ export interface Result {
   /** Whether tables were detected and images exported as composites for this result. */
   tables: boolean;
   composite: boolean;
+  /** Whether formulas on TeX pages were written as LaTeX. */
+  math: boolean;
 }
 
 export interface SessionOptions {
@@ -40,6 +42,10 @@ export interface SessionOptions {
   minHeight?: number;
   /** Detect tables (off by default in the demo). */
   tables: boolean;
+  /** Write formulas on pages typeset with TeX as `$…$` LaTeX. */
+  math: boolean;
+  /** Recognized words below this confidence (0–1) are dropped. */
+  minOcrConfidence: number;
   /** Export overlaid images with everything drawn above them, optionally with annotations. */
   composite: boolean;
   annotations: boolean;
@@ -91,6 +97,8 @@ export class PdfSession {
       ocr: options.ocr ? options.ocrMode : 'off',
       errorMode: 'collect',
       tables: options.tables,
+      math: options.math ? 'latex' : 'text',
+      minOcrConfidence: options.minOcrConfidence,
     });
     const images = await pdf.getImages({
       ...operation,
@@ -104,6 +112,7 @@ export class PdfSession {
       imageWarnings: images.warnings,
       tables: options.tables,
       composite: options.composite,
+      math: options.math,
     };
   }
 

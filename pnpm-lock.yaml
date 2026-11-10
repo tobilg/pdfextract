@@ -314,10 +314,6 @@ importers:
         version: 4.147.0(@types/node@22.19.1)
 
   packages/ocr:
-    dependencies:
-      fast-png:
-        specifier: 6.4.0
-        version: 6.4.0
     devDependencies:
       '@pdfextract/core':
         specifier: workspace:*

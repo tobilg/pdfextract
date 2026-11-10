@@ -40,20 +40,28 @@
  * @property {Subpath[] | undefined} subpaths PDF-space points; undefined when unparseable.
  * @property {BoxTuple | null} box
  * @property {number} width PDF-space stroke width.
+ * @property {boolean} [mask] A 1×1 image mask painting its placement (a TeX rule).
  */
 /** @typedef {{ box: BoxTuple | null }} AreaEvent Shown text or a shading fill. */
 /** @typedef {{ index: number; box: BoxTuple | null }} ImageEvent An image draw (operator 1001). */
+/**
+ * A glyph of upright horizontal text in PDF space: its text (PDF.js's Unicode), character code,
+ * the loaded name of its font, its baseline origin and advance end x, and its size (em).
+ * @typedef {{ text: string; code: number; font: string; x0: number; x1: number; y: number; size: number; hidden?: boolean }} GlyphRecord
+ */
+/** @typedef {{ glyphs: GlyphRecord[] }} GlyphEvent Glyphs of one shown string. */
 /**
  * @typedef {object} Collector Handlers return true to stop the walk.
  * @property {(event: PathEvent, state: WalkState) => boolean | void} [path]
  * @property {(event: AreaEvent, state: WalkState) => boolean | void} [text]
  * @property {(event: AreaEvent, state: WalkState) => boolean | void} [shading]
  * @property {(event: ImageEvent, state: WalkState) => boolean | void} [image]
+ * @property {(event: GlyphEvent, state: WalkState) => boolean | void} [glyphs]
  */
 /**
  * @typedef {object} ScanRequest
  * @property {number} pageIndex
- * @property {('images' | 'overlay' | 'rules')[]} [collect]
+ * @property {('images' | 'overlay' | 'rules' | 'fills' | 'fonts' | 'glyphs')[]} [collect]
  * @property {string} [decodeId]
  * @property {number} [maxPixels]
  * @property {number} [maxBytes]
@@ -61,16 +69,22 @@
  * @property {number} [maxWidth]
  * @property {number} [maxHeight]
  * @property {number[]} [orient]
+ * @property {number} [scale] Resize of an unencoded OCR raster after orientation: bilinear
+ *   enlargement above 1, area-average reduction below.
  */
 /** @typedef {import('../engine-types.js').RawImage} RawImage */
 /** @typedef {import('../engine-types.js').PageRules} PageRules */
+/** @typedef {import('../engine-types.js').PageFonts} PageFonts */
+/** @typedef {import('../engine-types.js').PageGlyphs} PageGlyphs */
 /** @typedef {PageRules['rules'][number]} RuleLine */
 /** @typedef {Omit<RawImage, 'overlaid'> & { index: number; stencil: boolean; fill: number[] }} ImageInfo */
 /**
  * Metrics of a loaded font that place its glyphs: `matrix` maps glyph widths to text space
  * (1/1000 em for most fonts, other units for Type3 and some CFF fonts), and vertical fonts
- * advance downwards using `defaultVMetrics` [w1y, vx, vy] unless a glyph has its own.
- * @typedef {{ matrix: number[]; vertical: boolean; defaultVMetrics: number[] | undefined }} FontMetrics
+ * advance downwards using `defaultVMetrics` [w1y, vx, vy] unless a glyph has its own. `name` is
+ * the PDF font name without a subset prefix and `bold` whether it is a bold face; `ascent` and
+ * `descent` are PDF.js's (em, possibly NaN).
+ * @typedef {{ matrix: number[]; vertical: boolean; defaultVMetrics: number[] | undefined; name: string; bold: boolean; ascent: number; descent: number }} FontMetrics
  */
 /**
  * An image draw recorded while building the operator list: PDF.js's buildPaintImageXObject

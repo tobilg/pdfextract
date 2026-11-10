@@ -19,9 +19,10 @@ function threePages() {
   return doc.build();
 }
 // No text: OCR here only tells which images were offered.
-const silent = (seen: number[]): OcrProvider => ({
+const silent = (seen: number[], layouts: (string | undefined)[] = []): OcrProvider => ({
   async recognize(raster) {
     seen.push(raster.width * raster.height);
+    layouts.push(raster.layout);
     return { text: '', lines: [], warnings: [] };
   },
   async close() {},
@@ -39,8 +40,9 @@ describe('image inventory', () => {
   it('INV-01: OCR auto scans only the selected pages; later listings match a fresh document', async () => {
     const bytes = threePages(),
       rasters: number[] = [],
+      layouts: (string | undefined)[] = [],
       progress: ProgressEvent[] = [];
-    const pdf = await openPdf(bytes, { ocr: silent(rasters) });
+    const pdf = await openPdf(bytes, { ocr: silent(rasters, layouts) });
     try {
       await pdf.getStructuredText({
         pages: [2],
@@ -48,8 +50,10 @@ describe('image inventory', () => {
         onProgress: (event) => progress.push(event),
       });
       expect(progress.filter((e) => e.stage === 'images').map((e) => e.pageNumber)).toEqual([2]);
-      // Only the blue 6×6 image of page 2 was recognized.
-      expect(rasters).toEqual([36]);
+      // Only the blue 6×6 image of page 2 was recognized, enlarged 4× to 24×24 for OCR because
+      // it is shown far below 200 DPI; with no text found on the page, once more as sparse text.
+      expect(rasters).toEqual([576, 576]);
+      expect(layouts).toEqual([undefined, 'sparse']);
       const listed = await pdf.getImages();
       const fresh = await openPdf(bytes);
       try {
@@ -241,5 +245,52 @@ describe('image inventory', () => {
     } finally {
       await pdf.close();
     }
+  });
+});
+
+describe('OCR concurrency', () => {
+  it('INV-06: a provider recognizing several rasters at once gets that many pages together', async () => {
+    const bytes = threePages();
+    const run = async (concurrency?: number) => {
+      let active = 0,
+        peak = 0;
+      const order: number[] = [];
+      const ocr: OcrProvider = {
+        concurrency,
+        async recognize(raster) {
+          active++;
+          peak = Math.max(peak, active);
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          active--;
+          order.push(raster.width);
+          return {
+            text: 'Word',
+            warnings: [],
+            lines: [
+              {
+                text: 'Word',
+                bbox: { x: 0, y: 0, width: 4, height: 4 },
+                words: [{ text: 'Word', bbox: { x: 0, y: 0, width: 4, height: 4 } }],
+              },
+            ],
+          };
+        },
+        async close() {},
+      };
+      const pdf = await openPdf(bytes, { ocr });
+      try {
+        const text = await pdf.getStructuredText({ ocr: 'auto' });
+        return { peak, pages: text.pages.map((p) => [p.pageNumber, p.fullText]) };
+      } finally {
+        await pdf.close();
+      }
+    };
+    const sequential = await run(),
+      together = await run(2);
+    expect(sequential.peak).toBe(1);
+    expect(together.peak).toBe(2);
+    // Same result either way, in page order.
+    expect(together.pages).toEqual(sequential.pages);
+    expect(together.pages.map(([n]) => n)).toEqual([1, 2, 3]);
   });
 });

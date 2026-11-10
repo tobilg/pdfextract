@@ -66,6 +66,23 @@ const images = await pdf.getImages({ minWidth: 100, minHeight: 100 });
 console.log(`${images.length} images, ${images.ignoredCount} smaller images ignored`);
 ```
 
+## Markdown, headings and math
+
+`getStructuredText` reads each page in reading order, column after column, and marks
+headings (`headingLevel`) and running headers and footers (`furniture`).
+{@link "@pdfextract/core".toMarkdown} renders the result as Markdown with `#` headings, pipe
+or HTML tables and one line per paragraph; on papers typeset with TeX, `math: 'latex'` writes
+formulas as `$…$` LaTeX rebuilt from their glyphs:
+
+```ts
+import { toMarkdown } from '@pdfextract/core';
+
+const text = await pdf.getStructuredText({ math: 'latex' });
+const markdown = toMarkdown(text, { furniture: false }); // without running headers
+```
+
+See [Text and Markdown](guides/text-and-markdown.md).
+
 ## Tables and composite images
 
 `getStructuredText` detects tables from ruling lines and aligned text columns and returns
@@ -99,7 +116,9 @@ return web streams from `get`. See the [storage package page](../storage/README.
 
 Start with [Getting started](guides/getting-started.md), then configure
 [OCR and assets](guides/ocr-and-assets.md) and [storage and persistence](guides/storage.md).
-The [coordinates and limits](guides/coordinates-and-limits.md) guide describes fidelity,
+[Text and Markdown](guides/text-and-markdown.md) explains reading order,
+headings, running headers and footers, Markdown and LaTeX math. The
+[coordinates and limits](guides/coordinates-and-limits.md) guide describes fidelity,
 resource budgets and lifecycle guarantees, and the [tables](guides/tables.md) guide
 covers table detection.
 

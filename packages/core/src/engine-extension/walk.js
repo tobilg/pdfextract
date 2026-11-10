@@ -18,6 +18,7 @@ const pdfextractMultiply = (m, n) => [
  * - text: { box } for shown text
  * - shading: { box } for shading fills
  * - image: { index, box } for image draws (operator 1001)
+ * - glyphs: { glyphs } for shown upright horizontal text, glyph by glyph (see GlyphRecord)
  * Boxes are [x0, y0, x1, y1] in PDF space, intersected with the current clip box (`state.clip`),
  * or null when clipped away entirely. A collector returning true stops the walk.
  */
@@ -60,7 +61,7 @@ function pdfextractWalk(list, collectors, fonts = new Map()) {
   // Text shown with a clipping mode (4-7) adds to the clip when the text object ends.
   let pendingTextClip = false;
   /**
-   * @template {'path' | 'text' | 'shading' | 'image'} E
+   * @template {'path' | 'text' | 'shading' | 'image' | 'glyphs'} E
    * @param {E} event
    * @param {Parameters<NonNullable<Collector[E]>>[0]} payload
    */
@@ -73,7 +74,8 @@ function pdfextractWalk(list, collectors, fonts = new Map()) {
     );
   // Events no collector handles are not computed (e.g. text extents in a decode-only scan).
   const wantsPaths = collectors.some((c) => c.path),
-    wantsText = collectors.some((c) => c.text);
+    wantsText = collectors.some((c) => c.text),
+    wantsGlyphs = collectors.some((c) => c.glyphs);
   /** @type {(x: number, y: number) => void} */
   const moveText = (x, y) => {
     text.x = text.lineX += x;
@@ -171,18 +173,26 @@ function pdfextractWalk(list, collectors, fonts = new Map()) {
     else if (op === OPS.setTextRenderingMode) state.textMode = args[0];
     else if (op === OPS.showText) {
       if (state.textMode >= 4) pendingTextClip = true;
-      if (!wantsText) continue;
+      if (!wantsText && !wantsGlyphs) continue;
+      // Modes 3 (invisible, e.g. OCR layers) and 7 (clip only) paint nothing. An invisible
+      // layer's glyphs are recorded too, marked hidden (they position its text).
+      const painted = state.textMode !== 3 && state.textMode !== 7;
+      /** @type {GlyphRecord[] | undefined} */
+      const glyphs = wantsGlyphs && state.textMode !== 7 ? [] : undefined;
       const box = pdfextractShowText(
-        /** @type {(number | { width?: number; isSpace?: boolean; vmetric?: number[] })[]} */ (
-          args[0]
-        ),
+        /** @type {(number | ShownGlyph)[]} */ (args[0]),
         state,
         text,
         state.fontName === undefined ? undefined : fonts.get(state.fontName),
+        glyphs,
       );
-      // Modes 3 (invisible, e.g. OCR layers) and 7 (clip only) paint nothing.
-      if (state.textMode === 3 || state.textMode === 7) continue;
-      if (emit('text', { box: pdfextractIntersect(box, state.clip) })) return;
+      if (!painted) {
+        for (const glyph of glyphs ?? []) glyph.hidden = true;
+        if (glyphs?.length && emit('glyphs', { glyphs })) return;
+        continue;
+      }
+      if (wantsText && emit('text', { box: pdfextractIntersect(box, state.clip) })) return;
+      if (glyphs?.length && emit('glyphs', { glyphs })) return;
     } else if (op === OPS.setGState) {
       for (const [key, value] of args[0])
         if (key === 'LW') state.lineWidth = value;
@@ -200,28 +210,58 @@ function pdfextractWalk(list, collectors, fonts = new Map()) {
     } else if (op === 1001) {
       const box = pdfextractIntersect(pdfextractBox(state.matrix, 0, 0, 1, 1, 0), state.clip);
       if (emit('image', { index: args[0], box })) return;
+      // A 1×1 image mask stretched by the matrix paints a filled rectangle in the fill color:
+      // how some TeX drivers draw rules (fraction bars, table lines).
+      if (!args[1] || !wantsPaths) continue;
+      const m = state.matrix,
+        unit = [0, 0, 1, 0, 1, 1, 0, 1];
+      /** @type {[number, number][]} */
+      const points = [];
+      for (let k = 0; k < 8; k += 2)
+        points.push([
+          m[0] * unit[k] + m[2] * unit[k + 1] + m[4],
+          m[1] * unit[k] + m[3] * unit[k + 1] + m[5],
+        ]);
+      const event = {
+        op: OPS.fill,
+        stroke: false,
+        fill: true,
+        subpaths: [{ points, curved: false, closed: true }],
+        box: pdfextractIntersect(pdfextractBox(m, 0, 0, 1, 1, 0), state.clip),
+        width: 0,
+        mask: true,
+      };
+      if (emit('path', event)) return;
     }
   }
 }
+/**
+ * @typedef {{ width?: number; isSpace?: boolean; vmetric?: number[]; unicode?: string; originalCharCode?: number }} ShownGlyph
+ */
 /**
  * Advances the text position over shown glyphs the way the renderer does and returns their
  * estimated extent in PDF space: 0.8 em above and 0.2 em below the baseline for horizontal
  * text, 0.5 em either side of the line for vertical text. Every shown text has metrics: PDF.js
  * substitutes a fallback for missing or broken fonts, and image scans fail on text shown before
- * any font is set. The 1/1000 em default only guards against an engine change.
- * @param {(number | { width?: number; isSpace?: boolean; vmetric?: number[] })[]} glyphs
+ * any font is set. The 1/1000 em default only guards against an engine change. With `out`, the
+ * non-blank glyphs of upright horizontal text are added to it.
+ * @param {(number | ShownGlyph)[]} glyphs
  * @param {WalkState} state
  * @param {{ matrix: number[]; x: number; y: number }} text
  * @param {FontMetrics | undefined} font
+ * @param {GlyphRecord[]} [out]
  * @returns {BoxTuple}
  */
-function pdfextractShowText(glyphs, state, text, font) {
+function pdfextractShowText(glyphs, state, text, font, out) {
   const size = state.font,
     em = Math.abs(size),
     m = pdfextractMultiply(state.matrix, text.matrix),
     startX = text.x,
     startY = text.y;
   const scale = size * (font ? font.matrix[0] : 0.001);
+  // Glyph positions only for text drawn upright (no rotation, skew or mirroring).
+  const record =
+    out && font && !font.vertical && state.fontName !== undefined && pdfextractUpright(m, size);
   let advance = 0;
   for (const glyph of glyphs) {
     if (typeof glyph === 'number') {
@@ -233,7 +273,24 @@ function pdfextractShowText(glyphs, state, text, font) {
       const vmetric = glyph?.vmetric ?? font.defaultVMetrics;
       // Spacing works against the downward advance, as in the renderer.
       advance += (vmetric ? -vmetric[0] : (glyph?.width ?? 0)) * scale - spacing;
-    } else advance += (glyph?.width ?? 0) * scale + spacing;
+      continue;
+    }
+    const width = (glyph?.width ?? 0) * scale;
+    if (record && glyph?.unicode?.trim()) {
+      const y = startY + state.rise,
+        x0 = startX + advance * state.hScale,
+        x1 = x0 + width * state.hScale;
+      out.push({
+        text: glyph.unicode,
+        code: glyph.originalCharCode ?? -1,
+        font: /** @type {string} */ (state.fontName),
+        x0: m[0] * x0 + m[2] * y + m[4],
+        x1: m[0] * x1 + m[2] * y + m[4],
+        y: m[1] * x0 + m[3] * y + m[5],
+        size: em * Math.abs(m[3]),
+      });
+    }
+    advance += width + spacing;
   }
   if (font?.vertical) {
     text.y -= advance;
@@ -250,6 +307,21 @@ function pdfextractShowText(glyphs, state, text, font) {
   const bottom = startY + state.rise - 0.2 * em,
     top = startY + state.rise + 0.8 * em;
   return pdfextractBox(m, Math.min(startX, text.x), bottom, Math.max(startX, text.x), top, 0);
+}
+/**
+ * Whether text drawn with matrix `m` at font size `size` is upright: no rotation or skew beyond
+ * rounding, and not mirrored.
+ * @param {Matrix} m
+ * @param {number} size
+ */
+function pdfextractUpright(m, size) {
+  const scale = Math.max(Math.abs(m[0]), Math.abs(m[3]));
+  return (
+    Math.abs(m[1]) <= scale * 1e-3 &&
+    Math.abs(m[2]) <= scale * 1e-3 &&
+    m[0] * size > 0 &&
+    m[3] * size > 0
+  );
 }
 // Subpaths of a constructPath buffer as PDF-space points; curves keep only their end point.
 /**

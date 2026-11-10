@@ -37,8 +37,11 @@ async function pdfextractPage(manager, handler, pageIndex, strict) {
     last &&
     last.manager === manager &&
     last.pageIndex === pageIndex &&
-    // A degraded lenient list stands in for the strict one, which fails again.
-    (last.strict === strict || (strict && last.degraded !== undefined))
+    // A degraded lenient list stands in for the strict one, which fails again; a strict list
+    // built without errors is what a lenient build gives too.
+    (last.strict === strict ||
+      (strict && last.degraded !== undefined) ||
+      (!strict && last.strict && last.degraded === undefined))
   )
     return last;
   pdfextractLastPage = undefined;
@@ -95,18 +98,40 @@ async function pdfextractBuild(manager, handler, pageIndex, ignoreErrors) {
   evaluator.handleSetFont = async function (...args) {
     const loadedName = await handleSetFont.apply(this, args),
       font = args[5]?.font;
-    if (font)
+    if (font) {
+      const name = String(font.name ?? '').replace(/^[A-Z]{6}\+/, '');
       fonts.set(loadedName, {
         matrix: font.fontMatrix ?? [0.001, 0, 0, 0.001, 0, 0],
         vertical: !!font.vertical,
         defaultVMetrics: font.defaultVMetrics,
+        name,
+        ascent: Number(font.ascent),
+        descent: Number(font.descent),
+        // Weight names; "Medi(um)" is the bold of URW's Times (LaTeX papers), CMBX/CMB Computer
+        // Modern's.
+        bold:
+          !!(font.bold || font.black) ||
+          /bold|black|heavy|semibold|demi|extrab|ultrab|medi(um)?\b|^cmbx?\d/i.test(name),
       });
+    }
     return loadedName;
   };
+  // These operator lists are walked, never drawn: skip the glyph outlines PDF.js compiles and
+  // posts to the main thread for every shown string when font faces are disabled (as in Node).
+  // Renders use PDF.js's own evaluator, which builds them when needed.
+  /** @param {any} chars @param {any} state */
+  evaluator.handleText = (chars, state) => state.font.charsToGlyphs(chars);
   /** @param {any} args */
   evaluator.buildPaintImageXObject = async function (args) {
-    const index = images.push({ ...args, evaluator: this }) - 1;
-    args.operatorList.addOp(1001, [index]);
+    const index = images.push({ ...args, evaluator: this }) - 1,
+      dict = args.image?.dict;
+    // A 1×1 image mask paints its placement in the fill color (PDF.js renders it as a solid
+    // rectangle): some TeX drivers draw rules so.
+    const solid =
+      !!dict?.get('IM', 'ImageMask') &&
+      dict.get('W', 'Width') === 1 &&
+      dict.get('H', 'Height') === 1;
+    args.operatorList.addOp(1001, [index, solid]);
   };
   const list = new OperatorList();
   await evaluator.getOperatorList({
@@ -119,7 +144,9 @@ async function pdfextractBuild(manager, handler, pageIndex, ignoreErrors) {
 }
 // One walk over a page's operator list feeds the collectors named in `data.collect`:
 // 'images' (inventory, or the decode of `data.decodeId`), 'overlay' (which images the page
-// draws above) and 'rules' (ruling lines for table detection).
+// draws above), 'rules' (ruling lines for table detection), 'fills' (filled paths, a sign of
+// outlined lettering) and 'glyphs' (positioned glyphs, for math). 'fonts' reports the names and
+// weights of the fonts the page loaded.
 /**
  * @param {any} manager The worker's PDF manager.
  * @param {any} handler The worker's message handler.
@@ -135,10 +162,16 @@ async function pdfextractScan(manager, handler, data) {
   );
   const inventory = collect.has('images') ? pdfextractImageCollector(images, data) : undefined,
     overlay = collect.has('overlay') ? pdfextractOverlayCollector() : undefined,
-    rules = collect.has('rules') ? pdfextractRuleCollector() : undefined;
+    rules = collect.has('rules') ? pdfextractRuleCollector() : undefined,
+    fills = collect.has('fills') ? pdfextractFillCollector() : undefined,
+    glyphs = collect.has('glyphs') ? pdfextractGlyphCollector() : undefined,
+    // Math reads fractions, roots and overlines from rules, including image-mask ones.
+    mathRules = glyphs ? pdfextractRuleCollector(true) : undefined;
   pdfextractWalk(
     list,
-    /** @type {Collector[]} */ ([inventory, overlay, rules].filter((collector) => collector)),
+    /** @type {Collector[]} */ (
+      [inventory, overlay, rules, fills, glyphs, mathRules].filter((collector) => collector)
+    ),
     fonts,
   );
   if (data.decodeId) {
@@ -152,7 +185,7 @@ async function pdfextractScan(manager, handler, data) {
       if (!target.item.image.dict.objId) pdfextractLastPage = undefined;
     }
   }
-  /** @type {{ images?: RawImage[]; rules?: PageRules; degraded?: string }} */
+  /** @type {{ images?: RawImage[]; rules?: PageRules; fills?: number; fonts?: PageFonts; glyphs?: PageGlyphs; degraded?: string }} */
   const result = {};
   if (inventory) {
     const overlaid = overlay?.result() ?? [];
@@ -160,6 +193,22 @@ async function pdfextractScan(manager, handler, data) {
     if (degraded !== undefined) result.degraded = degraded;
   }
   if (rules) result.rules = rules.result();
+  if (fills) result.fills = fills.result();
+  if (glyphs)
+    result.glyphs = {
+      glyphs: glyphs.result(),
+      rules: mathRules?.result().rules ?? [],
+      fonts: Object.fromEntries(
+        [...fonts].map(([loadedName, { name, ascent, descent }]) => [
+          loadedName,
+          { name, ascent, descent },
+        ]),
+      ),
+    };
+  if (collect.has('fonts'))
+    result.fonts = Object.fromEntries(
+      [...fonts].map(([loadedName, { name, bold }]) => [loadedName, { name, bold }]),
+    );
   return result;
 }
 /**

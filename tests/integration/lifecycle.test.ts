@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { type OcrProvider, openPdf, PdfExtractError } from '@pdfextract/core';
 import { expect, it } from 'vitest';
+import { pdfWithText } from '../helpers/pdf.js';
 
 it('CORE-04: real worker startup failure retains the original diagnostic and allows recovery', async () => {
   const bytes = await readFile('tests/fixtures/baseline.pdf');
@@ -59,6 +60,34 @@ it('PERF-02 CORE-04: cancellation rejects queued work and keeps caller/output bu
   await pdf.close();
   expect(Buffer.from(full.data).equals(Buffer.from(copy))).toBe(true);
   expect(input[0]).toBe(37);
+});
+
+it('PERF-03 CORE-04: documents read one after another on reused engine workers keep their own text', async () => {
+  // Engine workers serve one document at a time and are reused after a clean close; a
+  // document's cached page never answers for another document's page of the same number.
+  const doc = (word: string) => pdfWithText([`BT /F 12 Tf 72 700 Td (${word}) Tj ET`]);
+  for (const word of ['Alpha', 'Bravo', 'Charlie', 'Delta']) {
+    const pdf = await openPdf(doc(word));
+    try {
+      expect((await pdf.getStructuredText()).fullText).toBe(word);
+    } finally {
+      await pdf.close();
+    }
+  }
+  // After an aborted operation the document closes cleanly; the next one still reads correctly.
+  const stop = new AbortController();
+  const aborted = await openPdf(doc('Echo'));
+  stop.abort();
+  await expect(aborted.getStructuredText({ signal: stop.signal })).rejects.toMatchObject({
+    code: 'ABORTED',
+  });
+  await aborted.close();
+  const pdf = await openPdf(doc('Foxtrot'));
+  try {
+    expect((await pdf.getStructuredText()).fullText).toBe('Foxtrot');
+  } finally {
+    await pdf.close();
+  }
 });
 
 it('OCR-03/04: repeated occurrences survive merging and rotated image geometry is transformed', async () => {

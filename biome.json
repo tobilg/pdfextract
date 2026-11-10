@@ -15,7 +15,8 @@
       "!!artifacts",
       "!!test-results",
       "!!playwright-report",
-      "!!pnpm-lock.yaml"
+      "!!pnpm-lock.yaml",
+      "!!benchmarks/baselines"
     ]
   },
   "formatter": {

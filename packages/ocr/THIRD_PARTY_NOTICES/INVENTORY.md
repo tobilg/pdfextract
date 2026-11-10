@@ -15,7 +15,6 @@ when self-hosting the files in `dist/assets`.
 | regenerator-runtime 0.13.11 | MIT | `regenerator-runtime-LICENSE` | Bundled Tesseract.js dependency |
 | wasm-feature-detect 1.9.0 | Apache-2.0 | `wasm-feature-detect-LICENSE` | Bundled SIMD/relaxed-SIMD core selection |
 | zlibjs 0.3.1 | MIT | `zlibjs-LICENSE` | Bundled in upstream `worker.min.js` (model decompression) |
-| fast-png 6.4.0, iobuffer, pako | MIT, MIT, MIT AND Zlib | `fast-png-LICENSE`, `iobuffer-LICENSE`, `pako-LICENSE` | Runtime dependency used to encode rasters for Tesseract |
 
 ## WebAssembly OCR engine
 

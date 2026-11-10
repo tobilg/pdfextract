@@ -1,6 +1,6 @@
 {
   "name": "@pdfextract/ocr",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Lazy, self-hosted Tesseract OCR provider for @pdfextract/core in browsers and Node.js. No CDN or implicit model downloads.",
   "keywords": [
     "pdf",
@@ -41,11 +41,8 @@
     },
     "./assets/*": "./dist/assets/*"
   },
-  "dependencies": {
-    "fast-png": "6.4.0"
-  },
   "peerDependencies": {
-    "@pdfextract/core": "^0.3.0"
+    "@pdfextract/core": "^0.4.0"
   },
   "devDependencies": {
     "@pdfextract/core": "workspace:*",

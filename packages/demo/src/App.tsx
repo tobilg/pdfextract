@@ -1,9 +1,13 @@
-import type {
-  EmbeddedImage,
-  ExtractedImage,
-  ProgressEvent,
-  Table,
-  TextPage,
+import {
+  type EmbeddedImage,
+  type ExtractedImage,
+  type MarkdownOptions,
+  type ProgressEvent,
+  type StructuredText,
+  type Table,
+  type TextBlock,
+  type TextPage,
+  toMarkdown,
 } from '@pdfextract/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PdfSession, type Result, type SessionOptions } from './session';
@@ -75,10 +79,17 @@ export function App() {
   const [minWidth, setMinWidth] = useState('');
   const [minHeight, setMinHeight] = useState('');
   const [tables, setTables] = useState(false);
+  const [math, setMath] = useState(false);
+  const [minConfidence, setMinConfidence] = useState('0.3');
+  const [markdown, setMarkdown] = useState<MarkdownSettings>({
+    furniture: true,
+    lines: 'paragraph',
+    tables: 'auto',
+  });
   const [composite, setComposite] = useState(false);
   const [annotations, setAnnotations] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
-  const [view, setView] = useState<'text' | 'structure' | 'tables' | 'json'>('text');
+  const [view, setView] = useState<'text' | 'markdown' | 'structure' | 'tables' | 'json'>('text');
   const download = useDownloads();
 
   useEffect(() => {
@@ -133,6 +144,8 @@ export function App() {
           minWidth: pixels(minWidth),
           minHeight: pixels(minHeight),
           tables,
+          math,
+          minOcrConfidence: Number(minConfidence),
           composite,
           annotations,
           ...overrides,
@@ -195,9 +208,12 @@ export function App() {
   const warnings = result ? [...result.text.warnings, ...result.imageWarnings] : [];
   // The Tables view only exists for results extracted with table detection.
   const views = result?.tables
-    ? (['text', 'structure', 'tables', 'json'] as const)
-    : (['text', 'structure', 'json'] as const);
+    ? (['text', 'markdown', 'structure', 'tables', 'json'] as const)
+    : (['text', 'markdown', 'structure', 'json'] as const);
   const activeView = view === 'tables' && !result?.tables ? 'text' : view;
+  // Inferred structure across the document, for the summary.
+  const headings = result ? blockCount(result.text.pages, (block) => !!block.headingLevel) : 0;
+  const furniture = result ? blockCount(result.text.pages, (block) => !!block.furniture) : 0;
   return (
     <>
       <header className="topbar">
@@ -209,7 +225,10 @@ export function App() {
       <main>
         <section className="intro">
           <h1>See what’s inside your PDF.</h1>
-          <p>Explore text, its structure, and the original embedded images.</p>
+          <p>
+            Explore text in reading order, its structure and Markdown, and the original embedded
+            images.
+          </p>
           <p className="privacy">
             Your PDF stays in this tab. Nothing is uploaded or saved by the demo.
           </p>
@@ -240,7 +259,7 @@ export function App() {
                       setOcrMode(event.target.value as SessionOptions['ocrMode'])
                     }
                   >
-                    <option value="auto">Embedded image regions</option>
+                    <option value="auto">Automatic (images and outlined text)</option>
                     <option value="always">Whole pages (including vector text)</option>
                   </select>
                 </label>
@@ -254,6 +273,20 @@ export function App() {
                   </select>
                 </label>
               )}
+              {ocr && (
+                <label>
+                  Minimum word confidence
+                  <select
+                    value={minConfidence}
+                    onChange={(event) => setMinConfidence(event.target.value)}
+                  >
+                    <option value="0">Keep every word</option>
+                    <option value="0.3">30% (default)</option>
+                    <option value="0.5">50%</option>
+                    <option value="0.7">70%</option>
+                  </select>
+                </label>
+              )}
               <label className="checkbox">
                 <input
                   type="checkbox"
@@ -261,6 +294,14 @@ export function App() {
                   onChange={(event) => setTables(event.target.checked)}
                 />
                 Detect tables
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={math}
+                  onChange={(event) => setMath(event.target.checked)}
+                />
+                Write TeX formulas as LaTeX
               </label>
               <label className="checkbox">
                 <input
@@ -420,6 +461,14 @@ export function App() {
                   .toLocaleString()}{' '}
                 text characters
               </span>
+              <span>
+                {headings} {headings === 1 ? 'heading' : 'headings'}
+              </span>
+              {furniture > 0 && (
+                <span>
+                  {furniture} header, footer or margin {furniture === 1 ? 'block' : 'blocks'}
+                </span>
+              )}
             </div>
             {result.images.length === 0 &&
               result.text.pages.every(
@@ -488,6 +537,19 @@ export function App() {
                     >
                       Download text
                     </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        download(
+                          new Blob([toMarkdown(result.text, markdown)], {
+                            type: 'text/markdown;charset=utf-8',
+                          }),
+                          'text.md',
+                        )
+                      }
+                    >
+                      Download Markdown
+                    </button>
                   </div>
                 </div>
                 <div className="text-controls">
@@ -517,6 +579,7 @@ export function App() {
                         {
                           {
                             text: 'Reading',
+                            markdown: 'Markdown',
                             structure: 'Structure',
                             tables: 'Tables',
                             json: 'Page JSON',
@@ -538,6 +601,14 @@ export function App() {
                   <pre className="json-view" data-testid="page-json">
                     {JSON.stringify(page, null, 2)}
                   </pre>
+                ) : activeView === 'markdown' ? (
+                  <MarkdownView
+                    text={result.text}
+                    page={page}
+                    math={result.math}
+                    settings={markdown}
+                    onChange={setMarkdown}
+                  />
                 ) : activeView === 'structure' ? (
                   <Structure page={page} />
                 ) : activeView === 'tables' ? (
@@ -562,8 +633,8 @@ export function App() {
             <div>
               <h2>Text with context</h2>
               <p>
-                Read the extracted text, inspect pages, blocks and spans, or download the structured
-                JSON.
+                Read the extracted text column by column, inspect headings, blocks and spans, or
+                download it as Markdown or structured JSON.
               </p>
             </div>
             <div>
@@ -586,6 +657,77 @@ export function App() {
 
 function tableCount(pages: readonly TextPage[]) {
   return pages.reduce((count, entry) => count + entry.tables.length, 0);
+}
+function blockCount(pages: readonly TextPage[], test: (block: TextBlock) => boolean) {
+  return pages.reduce((count, entry) => count + entry.blocks.filter(test).length, 0);
+}
+
+/** The Markdown choices the demo offers; the page separator keeps its default. */
+type MarkdownSettings = Required<Pick<MarkdownOptions, 'furniture' | 'lines' | 'tables'>>;
+
+/** The current page as Markdown, with the options that shape it (also used for the download). */
+function MarkdownView({
+  text,
+  page,
+  math,
+  settings,
+  onChange,
+}: {
+  text: StructuredText;
+  page: TextPage;
+  math: boolean;
+  settings: MarkdownSettings;
+  onChange: (settings: MarkdownSettings) => void;
+}) {
+  const markdown = useMemo(
+    () => toMarkdown({ ...text, pages: [page] }, settings),
+    [text, page, settings],
+  );
+  return (
+    <>
+      <fieldset className="markdown-options">
+        <legend className="sr-only">Markdown options</legend>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={!settings.furniture}
+            onChange={(event) => onChange({ ...settings, furniture: !event.target.checked })}
+          />
+          Leave out running headers and footers
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={settings.lines === 'preserve'}
+            onChange={(event) =>
+              onChange({ ...settings, lines: event.target.checked ? 'preserve' : 'paragraph' })
+            }
+          />
+          Keep the page's lines
+        </label>
+        <label>
+          Tables
+          <select
+            value={settings.tables}
+            onChange={(event) =>
+              onChange({ ...settings, tables: event.target.value as MarkdownSettings['tables'] })
+            }
+          >
+            <option value="auto">Pipe, HTML where cells merge</option>
+            <option value="pipe">Pipe tables</option>
+            <option value="html">HTML tables</option>
+          </select>
+        </label>
+      </fieldset>
+      <p className="muted markdown-note">
+        Headings, paragraphs and tables are inferred from the layout.
+        {math ? ' Formulas on TeX pages are LaTeX.' : ''} The download holds every page.
+      </p>
+      <pre className="markdown-view" data-testid="markdown">
+        {markdown || 'No text was found on this page.'}
+      </pre>
+    </>
+  );
 }
 
 function Tables({ page }: { page: TextPage }) {
@@ -649,6 +791,18 @@ function Structure({ page }: { page: TextPage }) {
           <summary>
             Block {index + 1}
             {block.tableIndex !== undefined ? ` (table ${block.tableIndex + 1})` : ''}
+            {block.headingLevel ? (
+              <span className="badge block-badge">Heading {block.headingLevel}</span>
+            ) : null}
+            {block.furniture ? (
+              <span className="badge block-badge">
+                {
+                  { header: 'Running header', footer: 'Running footer', margin: 'Margin stamp' }[
+                    block.furniture
+                  ]
+                }
+              </span>
+            ) : null}
             <span className="structure-summary">
               {block.lines.length} lines · {block.text.slice(0, 70)}
             </span>

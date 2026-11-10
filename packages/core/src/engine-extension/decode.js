@@ -154,6 +154,10 @@ async function pdfextractDecode(page, { info, item }, data) {
   // streams after export; later exports reparse from owned PDF bytes.
   page.xref._cacheMap.clear();
   const oriented = pdfextractOrient(pixels, width, height, data.orient);
+  if (!data.encode && data.scale && data.scale !== 1) {
+    const resize = data.scale > 1 ? pdfextractUpscale : pdfextractDownscale;
+    return { ...info, ...resize(oriented.pixels, oriented.width, oriented.height, data.scale) };
+  }
   if (data.encode)
     return {
       ...info,
@@ -166,6 +170,137 @@ async function pdfextractDecode(page, { info, item }, data) {
       ),
     };
   return { ...info, width: oriented.width, height: oriented.height, pixels: oriented.pixels };
+}
+/**
+ * Bilinear enlargement of an OCR working raster. Interpolates premultiplied alpha so transparent
+ * pixels (often stored black) do not darken glyph edges. Exports never use this.
+ * @param {Uint8Array} pixels
+ * @param {number} width
+ * @param {number} height
+ * @param {number} factor
+ */
+function pdfextractUpscale(pixels, width, height, factor) {
+  const outWidth = Math.max(1, Math.round(width * factor)),
+    outHeight = Math.max(1, Math.round(height * factor)),
+    output = new Uint8Array(outWidth * outHeight * 4);
+  /** @param {number} out @param {number} size */
+  const axis = (out, size) => {
+    const lo = new Uint32Array(out),
+      hi = new Uint32Array(out),
+      weight = new Float32Array(out);
+    for (let i = 0; i < out; i++) {
+      const s = Math.min(size - 1, Math.max(0, ((i + 0.5) * size) / out - 0.5));
+      lo[i] = Math.floor(s);
+      hi[i] = Math.min(size - 1, lo[i] + 1);
+      weight[i] = s - lo[i];
+    }
+    return { lo, hi, weight };
+  };
+  const xs = axis(outWidth, width),
+    ys = axis(outHeight, height);
+  for (let y = 0; y < outHeight; y++) {
+    const r0 = ys.lo[y] * width,
+      r1 = ys.hi[y] * width,
+      wy = ys.weight[y];
+    for (let x = 0; x < outWidth; x++) {
+      const wx = xs.weight[x],
+        p0 = (r0 + xs.lo[x]) * 4,
+        p1 = (r0 + xs.hi[x]) * 4,
+        p2 = (r1 + xs.lo[x]) * 4,
+        p3 = (r1 + xs.hi[x]) * 4,
+        a0 = (1 - wx) * (1 - wy) * pixels[p0 + 3],
+        a1 = wx * (1 - wy) * pixels[p1 + 3],
+        a2 = (1 - wx) * wy * pixels[p2 + 3],
+        a3 = wx * wy * pixels[p3 + 3],
+        alpha = a0 + a1 + a2 + a3,
+        o = (y * outWidth + x) * 4;
+      output[o + 3] = Math.round(alpha);
+      if (alpha === 0) continue;
+      for (let c = 0; c < 3; c++)
+        output[o + c] = Math.round(
+          (a0 * pixels[p0 + c] + a1 * pixels[p1 + c] + a2 * pixels[p2 + c] + a3 * pixels[p3 + c]) /
+            alpha,
+        );
+    }
+  }
+  return { pixels: output, width: outWidth, height: outHeight };
+}
+/**
+ * Area-average reduction (factor < 1) of an OCR working raster, so thin strokes fade rather
+ * than vanish between samples. Each source pixel adds to the output pixels its area covers,
+ * with premultiplied alpha; only two output rows are accumulated at a time. Exports never use
+ * this.
+ * @param {Uint8Array} pixels
+ * @param {number} width
+ * @param {number} height
+ * @param {number} factor
+ */
+function pdfextractDownscale(pixels, width, height, factor) {
+  const outWidth = Math.max(1, Math.min(width, Math.floor(width * factor))),
+    outHeight = Math.max(1, Math.min(height, Math.floor(height * factor))),
+    output = new Uint8Array(outWidth * outHeight * 4),
+    fx = outWidth / width,
+    fy = outHeight / height;
+  // A source column covers [x·fx, (x+1)·fx): `share` of it lies in output column `column`,
+  // the rest (fx − share) in the next one.
+  const column = new Uint32Array(width),
+    share = new Float64Array(width);
+  for (let x = 0; x < width; x++) {
+    const start = x * fx,
+      o = Math.min(outWidth - 1, Math.floor(start));
+    column[x] = o;
+    share[x] = Math.min((x + 1) * fx, o + 1) - start;
+  }
+  // Per output pixel: premultiplied R, G, B, then alpha and covered area.
+  let current = new Float64Array(outWidth * 5),
+    next = new Float64Array(outWidth * 5),
+    row = 0;
+  /** @param {Float64Array} sums @param {number} y */
+  const flush = (sums, y) => {
+    for (let x = 0; x < outWidth; x++) {
+      const s = x * 5,
+        area = sums[s + 4],
+        alpha = sums[s + 3],
+        o = (y * outWidth + x) * 4;
+      if (area > 0) output[o + 3] = Math.round(alpha / area);
+      if (alpha > 0) for (let c = 0; c < 3; c++) output[o + c] = Math.round(sums[s + c] / alpha);
+    }
+    sums.fill(0);
+  };
+  /** @param {Float64Array} sums @param {number} x @param {number} p @param {number} weight */
+  const add = (sums, x, p, weight) => {
+    const s = x * 5,
+      alpha = pixels[p + 3] * weight;
+    sums[s] += pixels[p] * alpha;
+    sums[s + 1] += pixels[p + 1] * alpha;
+    sums[s + 2] += pixels[p + 2] * alpha;
+    sums[s + 3] += alpha;
+    sums[s + 4] += weight;
+  };
+  for (let y = 0; y < height; y++) {
+    const start = y * fy,
+      o = Math.min(outHeight - 1, Math.floor(start));
+    while (row < o) {
+      flush(current, row++);
+      [current, next] = [next, current];
+    }
+    const top = Math.min((y + 1) * fy, o + 1) - start,
+      bottom = o + 1 < outHeight ? fy - top : 0;
+    for (let x = 0; x < width; x++) {
+      const p = (y * width + x) * 4,
+        left = share[x],
+        right = column[x] + 1 < outWidth ? fx - left : 0;
+      add(current, column[x], p, left * top);
+      if (right > 1e-9) add(current, column[x] + 1, p, right * top);
+      if (bottom > 1e-9) {
+        add(next, column[x], p, left * bottom);
+        if (right > 1e-9) add(next, column[x] + 1, p, right * bottom);
+      }
+    }
+  }
+  flush(current, row);
+  if (row + 1 < outHeight) flush(next, row + 1);
+  return { pixels: output, width: outWidth, height: outHeight };
 }
 /**
  * Nearest-neighbor bounded preview (never enlarged) and PNG encoding of an RGBA raster.

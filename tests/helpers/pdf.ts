@@ -1,7 +1,13 @@
 import { deflateSync } from 'node:zlib';
 
 /** Minimal one-page PDF with a single RGB image XObject /I drawn by `content`. */
-export function pdfWithImage(content: string, width: number, height: number, rgb: Uint8Array) {
+export function pdfWithImage(
+  content: string,
+  width: number,
+  height: number,
+  rgb: Uint8Array,
+  page: [number, number] = [600, 800],
+) {
   const data = deflateSync(rgb);
   const chunks: Buffer[] = [Buffer.from('%PDF-1.7\n')];
   const offsets: number[] = [];
@@ -17,8 +23,8 @@ export function pdfWithImage(content: string, width: number, height: number, rgb
   add('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
   add('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
   add(
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] ',
-    '/Resources << /XObject << /I 5 0 R >> >> /Contents 4 0 R >>\nendobj\n',
+    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page[0]} ${page[1]}] `,
+    '/Resources << /XObject << /I 5 0 R >> /Font << /F 6 0 R >> >> /Contents 4 0 R >>\nendobj\n',
   );
   add(`4 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`);
   add(
@@ -27,11 +33,15 @@ export function pdfWithImage(content: string, width: number, height: number, rgb
     data,
     '\nendstream\nendobj\n',
   );
+  // Helvetica as /F, for text drawn over the image (a scan's text layer).
+  add(
+    '6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n',
+  );
   const xref = length;
   chunks.push(
     Buffer.from(
-      `xref\n0 6\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}` +
-        `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`,
+      `xref\n0 7\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}` +
+        `trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`,
     ),
   );
   return new Uint8Array(Buffer.concat(chunks));
@@ -179,4 +189,40 @@ export class TestPdf {
     );
     return new Uint8Array(Buffer.concat(chunks));
   }
+}
+
+/**
+ * One-page 612×792 PDF of Helvetica text runs; x/y are PDF baseline coordinates (y up). `bold`
+ * sets a run in Helvetica-Bold; `graphics` is raw content-stream drawing (rules, shapes).
+ */
+export function pdfWithRuns(
+  runs: { x: number; y: number; size: number; text: string; bold?: boolean }[],
+  graphics = '',
+) {
+  const content = [
+    graphics,
+    ...runs.map(
+      ({ x, y, size, text, bold }) =>
+        `BT /${bold ? 'B' : 'F'} ${size} Tf ${x} ${y} Td (${text.replace(/[\\()]/g, (c) => `\\${c}`)}) Tj ET`,
+    ),
+  ].join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F 5 0 R /B 6 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+  ];
+  let body = '%PDF-1.7\n';
+  const offsets = objects.map((object, i) => {
+    const offset = body.length;
+    body += `${i + 1} 0 obj\n${object}\nendobj\n`;
+    return offset;
+  });
+  const xref = body.length;
+  body +=
+    `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}` +
+    `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(body, 'latin1'));
 }

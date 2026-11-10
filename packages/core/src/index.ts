@@ -6,3 +6,4 @@
 export * from './contracts.js';
 export { DEFAULT_LIMITS, openPdf } from './document.js';
 export * from './errors.js';
+export { type MarkdownOptions, toMarkdown } from './markdown.js';

@@ -13,7 +13,8 @@ async function copy(target, name, source) {
   await mkdir(`packages/${target}/THIRD_PARTY_NOTICES`, { recursive: true });
   await cp(source, `packages/${target}/THIRD_PARTY_NOTICES/${name}`);
 }
-for (const target of ['core', 'ocr']) {
+// fast-png and its parts ship in core's PNG encoder only.
+for (const target of ['core']) {
   const png = dirname(require.resolve('fast-png/package.json'));
   for (const name of ['fast-png', 'iobuffer', 'pako']) {
     const dir =

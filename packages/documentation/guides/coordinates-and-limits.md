@@ -8,8 +8,10 @@ group: Guides
 Core returns canonical page coordinates in points (1/72 inch), with a top-left origin,
 x right and y down. CropBox, UserUnit and page rotation are applied. Page numbers are
 one-based; `rotation` records the original PDF rotation. Reading order is a deterministic
-baseline/gutter/paragraph heuristic, not semantic recovery for arbitrary scripts. Tables
-are detected heuristically; see [Tables](tables.md).
+recursive XY-cut over columns and full-width sections, followed by baseline rows and
+paragraph spacing; it is not semantic recovery for arbitrary scripts. Tables are detected
+heuristically (see [Tables](tables.md)), and lines set larger or bolder than body text are
+marked as headings.
 
 Each image occurrence has an `imageToPage` transform `[a,b,c,d,e,f]`, mapping top-left
 raster pixel edges to page coordinates: `x′ = a*x + c*y + e`, `y′ = b*x + d*y + f`.
@@ -63,7 +65,7 @@ composite export renders them.
 | Pages | 10,000 |
 | Native image | 64 million pixels |
 | Estimated decoded working memory | 1 GiB |
-| OCR working raster | 16 million pixels |
+| OCR working raster | 16 million pixels (page renders and enlarged image regions target 300 DPI) |
 | Cached ruling lines for table detection | 200,000 lines (about 8 MB) |
 
 Override {@link "@pdfextract/core".PdfLimits} to suit the host. Full exports reject a

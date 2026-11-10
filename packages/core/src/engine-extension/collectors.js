@@ -171,7 +171,9 @@ const PDFEXTRACT_MAX_RULES = 5000;
 // Collects axis-aligned ruling lines in PDF space for table detection: stroked straight
 // segments and thin filled rectangles (drawn as their center line). Curves, white paint and
 // clipped-away parts are skipped. `truncated` reports hitting PDFEXTRACT_MAX_RULES.
-function pdfextractRuleCollector() {
+// Image masks drawn as rules count only with `masks` (for math): table detection was tuned
+// without them, and TeX documents draw many.
+function pdfextractRuleCollector(masks = false) {
   /** @type {RuleLine[]} */
   const rules = [];
   let truncated = false;
@@ -196,10 +198,11 @@ function pdfextractRuleCollector() {
       truncated = true;
       return;
     }
+    const kind = rule.fill ? { fill: true } : {};
     rules.push(
       horizontal
-        ? { x1: from, y1: pos, x2: to, y2: pos, width: rule.width }
-        : { x1: pos, y1: from, x2: pos, y2: to, width: rule.width },
+        ? { x1: from, y1: pos, x2: to, y2: pos, width: rule.width, ...kind }
+        : { x1: pos, y1: from, x2: pos, y2: to, width: rule.width, ...kind },
     );
   };
   // Near-white paint (e.g. a background or a knockout bar) draws no visible line.
@@ -207,7 +210,8 @@ function pdfextractRuleCollector() {
   const visible = (color, pattern) => pattern || color.some((c) => c < 250);
   return {
     /** @type {NonNullable<Collector['path']>} */
-    path({ stroke, fill, subpaths, width }, state) {
+    path({ stroke, fill, subpaths, width, mask }, state) {
+      if (mask && !masks) return;
       if (!subpaths || truncated) return;
       const stroked = stroke && visible(state.stroke, state.strokePattern),
         filled = fill && visible(state.fill, state.fillPattern);
@@ -221,6 +225,37 @@ function pdfextractRuleCollector() {
             if ((Math.abs(x1 - x2) <= 0.5 || Math.abs(y1 - y2) <= 0.5) && (x1 !== x2 || y1 !== y2))
               add({ x1, y1, x2, y2, width }, state.clip);
           }
+        // A filled ring with only horizontal and vertical edges (a table's outer border drawn as
+        // one frame shape) covers little of its bounds: its edges are drawn lines.
+        if (filled && points.length > 5) {
+          // Short diagonal steps are mitred corner joints.
+          const rectilinear = points.every(([x, y], i) => {
+            const [nx, ny] = points[(i + 1) % points.length];
+            return (
+              Math.abs(x - nx) <= 0.5 || Math.abs(y - ny) <= 0.5 || Math.hypot(x - nx, y - ny) <= 2
+            );
+          });
+          if (rectilinear) {
+            const xs = points.map((p) => p[0]),
+              ys = points.map((p) => p[1]);
+            let area = 0;
+            for (let i = 0; i < points.length; i++) {
+              const [x1, y1] = points[i],
+                [x2, y2] = points[(i + 1) % points.length];
+              area += x1 * y2 - x2 * y1;
+            }
+            const bounds =
+              (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+            if (Math.abs(area) / 2 < bounds * 0.15)
+              for (let i = 0; i < points.length; i++) {
+                const [x1, y1] = points[i],
+                  [x2, y2] = points[(i + 1) % points.length];
+                if (Math.hypot(x2 - x1, y2 - y1) >= 3)
+                  add({ x1, y1, x2, y2, width: 1 }, state.clip);
+              }
+          }
+          continue;
+        }
         if (filled && points.length >= 4 && points.length <= 5) {
           const xs = points.map((p) => p[0]),
             ys = points.map((p) => p[1]),
@@ -228,24 +263,59 @@ function pdfextractRuleCollector() {
             right = Math.max(...xs),
             bottom = Math.min(...ys),
             top = Math.max(...ys),
-            rectangular = points.every(
-              ([x, y]) =>
-                (Math.abs(x - left) <= 0.5 || Math.abs(x - right) <= 0.5) &&
-                (Math.abs(y - bottom) <= 0.5 || Math.abs(y - top) <= 0.5),
-            );
-          if (!rectangular) continue;
+            // Points on the top or bottom (left or right) edge. A thin bar qualifies on its long
+            // edges alone, so mitred ends (corners inset by the line width) still read as a line.
+            onY = points.every(([, y]) => Math.abs(y - bottom) <= 0.5 || Math.abs(y - top) <= 0.5),
+            onX = points.every(([x]) => Math.abs(x - left) <= 0.5 || Math.abs(x - right) <= 0.5);
           const w = right - left,
             h = top - bottom,
             middleY = (top + bottom) / 2,
             middleX = (left + right) / 2;
-          if (h <= 4 && w > h)
+          if (h <= 4 && w > h && onY)
             add({ x1: left, y1: middleY, x2: right, y2: middleY, width: h }, state.clip);
-          else if (w <= 4 && h > w)
+          else if (w <= 4 && h > w && onX)
             add({ x1: middleX, y1: bottom, x2: middleX, y2: top, width: w }, state.clip);
+          else if (!(onX && onY)) continue;
+          // A shaded cell, row or header (not a page-sized background): its edges outline cells
+          // as rules would, as in zebra-striped tables or grids of colored cells.
+          else if (!(w >= 400 && h >= 400)) {
+            const edge = { width: 0.5, fill: true };
+            add({ x1: left, y1: bottom, x2: right, y2: bottom, ...edge }, state.clip);
+            add({ x1: left, y1: top, x2: right, y2: top, ...edge }, state.clip);
+            add({ x1: left, y1: bottom, x2: left, y2: top, ...edge }, state.clip);
+            add({ x1: right, y1: bottom, x2: right, y2: top, ...edge }, state.clip);
+          }
         }
       }
     },
     /** @returns {PageRules} */
     result: () => ({ rules, truncated }),
+  };
+}
+// Positioned glyphs of upright horizontal text, in drawing order (see GlyphRecord). A page
+// shows at most PDFEXTRACT_MAX_GLYPHS of them; the rest are left out.
+const PDFEXTRACT_MAX_GLYPHS = 50_000;
+function pdfextractGlyphCollector() {
+  /** @type {GlyphRecord[]} */
+  const glyphs = [];
+  return {
+    /** @param {GlyphEvent} event */
+    glyphs(event) {
+      for (const glyph of event.glyphs)
+        if (glyphs.length < PDFEXTRACT_MAX_GLYPHS) glyphs.push(glyph);
+    },
+    result: () => glyphs,
+  };
+}
+// Counts filled paths. Many of them on a page without text usually means lettering drawn as
+// vector shapes, which only OCR of the rendered page can read.
+function pdfextractFillCollector() {
+  let count = 0;
+  return {
+    /** @param {PathEvent} event */
+    path(event) {
+      if (event.fill) count++;
+    },
+    result: () => count,
   };
 }

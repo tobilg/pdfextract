@@ -5,13 +5,54 @@ import { setRuntime } from './engine.js';
 import { PdfExtractError } from './errors.js';
 
 const require = createRequire(import.meta.url);
+/**
+ * Engine workers start by compiling the PDF.js worker module, a large part of a small
+ * document's time. Idle workers wait for the next document: one started ahead while a document
+ * is read, and ones released by documents that closed cleanly (up to two, each serving at most
+ * 100 documents). Failed or aborted documents end their worker. Idle workers do not keep the
+ * process alive.
+ */
+interface Idle {
+  key: string;
+  worker: NodeWorker;
+  /** Documents served. */
+  uses: number;
+  failed: boolean;
+}
+const idle: Idle[] = [];
+const MAX_IDLE = 2,
+  MAX_USES = 100;
+function spawn(bootstrap: URL, workerUrl: string, key: string): Idle {
+  const worker = new NodeWorker(bootstrap, {
+    // Assets are plain ESM: host loaders and CLI-only V8 flags are irrelevant.
+    execArgv: [],
+    workerData: { workerUrl },
+  });
+  const entry: Idle = { key, worker, uses: 0, failed: false };
+  // An idle worker that fails or ends is dropped; one in use reports through the engine.
+  const drop = () => {
+    entry.failed = true;
+    const i = idle.indexOf(entry);
+    if (i >= 0) idle.splice(i, 1);
+  };
+  worker.once('error', drop);
+  worker.once('exit', drop);
+  worker.unref();
+  return entry;
+}
 setRuntime({
   platform: 'node',
   worker(base, workerUrl) {
-    const worker = new NodeWorker(new URL('node-worker-bootstrap.mjs', base), {
-      // Assets are plain ESM: host loaders and CLI-only V8 flags are irrelevant.
-      execArgv: [],
-      workerData: { workerUrl },
+    const bootstrap = new URL('node-worker-bootstrap.mjs', base),
+      key = `${bootstrap.href}\n${workerUrl}`;
+    // The most recently released worker first; one is started ahead when none is left.
+    const index = idle.findLastIndex((e) => e.key === key);
+    const entry = index >= 0 ? idle.splice(index, 1)[0] : spawn(bootstrap, workerUrl, key);
+    entry.uses++;
+    const worker = entry.worker;
+    worker.ref();
+    setImmediate(() => {
+      if (!idle.some((e) => e.key === key)) idle.push(spawn(bootstrap, workerUrl, key));
     });
     const listeners = new Map<EventListener, (data: unknown) => void>();
     const errors = new Map<EventListener, (error: Error) => void>();
@@ -40,6 +81,18 @@ setRuntime({
           const wrapper = errors.get(listener);
           if (wrapper) worker.off('error', wrapper);
           errors.delete(listener);
+        }
+      },
+      async release() {
+        for (const wrapper of listeners.values()) worker.off('message', wrapper);
+        for (const wrapper of errors.values()) worker.off('error', wrapper);
+        listeners.clear();
+        errors.clear();
+        if (entry.failed || entry.uses >= MAX_USES || idle.length >= MAX_IDLE)
+          await worker.terminate();
+        else {
+          worker.unref();
+          idle.push(entry);
         }
       },
       terminate() {

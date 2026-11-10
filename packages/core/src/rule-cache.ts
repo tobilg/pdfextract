@@ -1,7 +1,7 @@
 import type { PageRules } from './engine-types.js';
 
-// Numbers per cached rule: x1, y1, x2, y2, width.
-const FIELDS = 5;
+// Numbers per cached rule: x1, y1, x2, y2, width, fill (1 for an edge of a shaded area).
+const FIELDS = 6;
 
 /**
  * Ruling lines of scanned pages, stored compactly (one Float64Array per page) within a
@@ -28,13 +28,15 @@ export class RuleCache {
         x2: data[i + 2],
         y2: data[i + 3],
         width: data[i + 4],
+        ...(data[i + 5] ? { fill: true } : {}),
       });
     return { rules, truncated: entry.truncated };
   }
   set(pageIndex: number, { rules, truncated }: PageRules) {
     this.delete(pageIndex);
     const data = new Float64Array(rules.length * FIELDS);
-    for (const [k, r] of rules.entries()) data.set([r.x1, r.y1, r.x2, r.y2, r.width], k * FIELDS);
+    for (const [k, r] of rules.entries())
+      data.set([r.x1, r.y1, r.x2, r.y2, r.width, r.fill ? 1 : 0], k * FIELDS);
     if (data.length > this.limit) return;
     for (const oldest of this.pages.keys()) {
       if (this.size + data.length <= this.limit) break;

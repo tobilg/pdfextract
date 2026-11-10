@@ -44,7 +44,11 @@ export interface PdfLimits {
   maxImagePixels?: number;
   /** Estimated decoded working-memory budget; default 1 GiB, estimated at 16 bytes per pixel. */
   maxDecodedBytes?: number;
-  /** Maximum pixels in a separately bounded OCR working raster; default 16 million. */
+  /**
+   * Maximum pixels in a separately bounded OCR working raster; default 16 million. Page renders
+   * target 300 DPI and low-resolution image regions are upscaled toward it within this budget;
+   * larger images are reduced (area average) to fit it rather than skipped.
+   */
   maxOcrPixels?: number;
   /**
    * Ruling lines kept for table detection across the document; default 200,000 (about 8 MB).
@@ -86,8 +90,17 @@ export interface OpenPdfOptions extends OperationOptions {
 
 /** Page selection, OCR policy and behavior when individual page or OCR-region operations fail. */
 export interface StructuredTextOptions extends OperationOptions {
-  /** Defaults to auto when a provider was supplied, otherwise off. Explicit auto/always requires a provider. */
+  /**
+   * Defaults to auto when a provider was supplied, otherwise off. Explicit auto/always requires a
+   * provider. Auto recognizes embedded images, and renders the whole page instead when a page has
+   * no native text but is drawn with many vector shapes (outlined lettering).
+   */
   ocr?: OcrMode;
+  /**
+   * Recognized words with a provider confidence below this value are dropped, which removes most
+   * noise from photos and graphics. Range 0–1; default 0.3; 0 keeps every word.
+   */
+  minOcrConfidence?: number;
   /** One-based pages to extract; omitted means all pages. */
   pages?: readonly number[];
   /** throw rejects on failure (default); collect returns partial results with diagnostics. */
@@ -98,6 +111,14 @@ export interface StructuredTextOptions extends OperationOptions {
    * and the extra vector-graphics scan it needs on pages with column-like text.
    */
   tables?: boolean;
+  /**
+   * Math on pages typeset with TeX. `latex` rebuilds formulas from their glyphs (math fonts,
+   * sub- and superscripts, fractions, roots, accents) and puts them in the text as `$…$` LaTeX,
+   * for Markdown and other math-aware consumers; `text` (default) keeps the glyphs' Unicode
+   * text. Pages without TeX math fonts are unaffected; `latex` costs one more glyph scan on
+   * pages with them.
+   */
+  math?: 'text' | 'latex';
 }
 
 /** Inventory selection. Images are enumerated without retaining all decoded rasters. */
@@ -254,7 +275,10 @@ export interface TextSpan {
   confidence?: number;
   /** Source embedded appearance for regional OCR, when applicable. */
   imageId?: ImageId;
-  /** Native PDF font identifier when available; not a claim that the font is installed. */
+  /**
+   * Native PDF font name without a subset prefix (for example `Calibri-Bold`) when available,
+   * otherwise the engine's generic family; not a claim that the font is installed.
+   */
   fontName?: string;
   /** Native text size in canonical page points when available. */
   fontSize?: number;
@@ -283,6 +307,20 @@ export interface TextBlock {
   lines: TextLine[];
   /** Index into {@link TextPage.tables} when this block is a detected table. */
   tableIndex?: number;
+  /**
+   * Heading rank on its page when this block was inferred to be a heading, 1 for the largest
+   * type: short lines set larger than the page's body text, or bold where it is not. A heuristic,
+   * not tagged PDF structure.
+   */
+  headingLevel?: number;
+  /**
+   * Page furniture: a running header or footer (journal line, running title, page number,
+   * copyright or download notice), inferred from its place at the page edge, its separation
+   * from the text and repetition across pages, or a `margin` stamp: text set at a quarter turn
+   * along a side edge (a download notice, a preprint identifier). The block stays in the text;
+   * `toMarkdown` can leave it out (`furniture: false`).
+   */
+  furniture?: 'header' | 'footer' | 'margin';
 }
 
 /** One cell of a detected table. Bounds are the cell's grid area, not only its text. */
@@ -432,6 +470,17 @@ export interface OcrRaster {
   stride: number;
   /** Eight-bit red/green/blue/alpha channel order. */
   format: 'rgba8';
+  /**
+   * Effective resolution in pixels per inch, as the raster appears on the page, when known.
+   * Core sets it for page renders and image regions; providers may use it to tune recognition.
+   */
+  dpi?: number;
+  /**
+   * `sparse` when the raster holds scattered words (handwriting, forms, labels) rather than
+   * blocks of text, as core asks when a page yielded no text otherwise; recognizers may use a
+   * sparse-text mode for it or ignore it.
+   */
+  layout?: 'sparse';
 }
 
 /** One recognized word, measured in the original input raster pixel coordinate system. */
@@ -468,6 +517,11 @@ export interface OcrResult {
 export interface OcrProvider {
   /** Recognize one raster and return input-pixel geometry. Core maps those coordinates into the page. */
   recognize(raster: OcrRaster, options?: OperationOptions): Promise<OcrResult>;
+  /**
+   * How many rasters the provider recognizes at once (its workers); default 1. With more than
+   * one, core reads that many pages together during OCR, so their recognition overlaps.
+   */
+  readonly concurrency?: number;
   /** Idempotently release provider-owned workers/resources. The application calls this after all borrowing PDFs finish. */
   close(): Promise<void>;
 }

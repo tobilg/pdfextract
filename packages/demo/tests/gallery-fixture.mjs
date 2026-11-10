@@ -96,3 +96,41 @@ export function brokenTextFixture() {
   );
   return pdf.bytes();
 }
+
+/**
+ * Original page set like a TeX paper: a running header and a page number at the page edges, a
+ * heading in large type, and a sentence with formulas in fonts named like Computer Modern (a
+ * subscript, and a fraction whose bar is a 1×1 image mask stretched by the matrix).
+ */
+export function structureFixture() {
+  const pdf = new FixturePdf();
+  const font = (name) => pdf.add(`<< /Type /Font /Subtype /Type1 /BaseFont /${name} >>`);
+  const fonts = { R: font('CMR10'), H: font('CMR17'), M: font('CMMI10'), m: font('CMMI7') };
+  const bar = pdf.stream(
+    '/Type /XObject /Subtype /Image /Width 1 /Height 1 /ImageMask true /BitsPerComponent 1',
+    [0],
+  );
+  const runs = [
+    ['R', 8, 72, 760, 'Journal of Demo Studies 3'],
+    ['H', 17, 72, 600, 'Results'],
+    ['R', 10, 72, 576, 'Let us consider the following sum of terms.'],
+    ['R', 10, 72, 556, 'where'],
+    ['M', 10, 102, 556, 'x'],
+    ['m', 7, 107.5, 554, 'i'],
+    ['R', 10, 115, 556, 'is positive and'],
+    ['R', 10, 190, 560, '1'],
+    ['M', 10, 190, 548, 'n'],
+    ['R', 10, 205, 556, 'is small.'],
+    ['R', 10, 302, 40, '7'],
+  ];
+  pdf.page(
+    [
+      ...runs.map(([f, size, x, y, text]) => `BT /${f} ${size} Tf ${x} ${y} Td (${text}) Tj ET`),
+      'q 7.6 0 0 0.4 189 555.8 cm /K Do Q',
+    ].join('\n'),
+    `/Font << ${Object.entries(fonts)
+      .map(([name, ref]) => `/${name} ${ref} 0 R`)
+      .join(' ')} >> /XObject << /K ${bar} 0 R >>`,
+  );
+  return pdf.bytes();
+}

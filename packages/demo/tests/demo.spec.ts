@@ -7,24 +7,37 @@ import {
   galleryFixture,
   outlinedFixture,
   overlayFixture,
+  structureFixture,
   tableFixture,
 } from './gallery-fixture.mjs';
 
 const fixture = (name: string) => resolve('../../tests/fixtures', name);
 
-test('CORE-02 OCR-01 OCR-05: vector lettering needs whole-page OCR, not embedded-image OCR', async ({
+test('CORE-02 OCR-01 OCR-05 OCR-09: vector lettering is recognized from whole pages', async ({
   page,
 }) => {
   await page.goto('./');
+  // Automatic OCR renders pages whose lettering is drawn as vector shapes.
   await page.getByLabel('Recognize scanned text (OCR)').check();
   await page.locator('#pdf-file').setInputFiles({
     name: 'outlined-lettering.pdf',
     mimeType: 'application/pdf',
     buffer: outlinedFixture(),
   });
+  await expect(page.getByRole('status').first()).toContainText('Extraction complete', {
+    timeout: 90_000,
+  });
+  await expect(page.getByLabel('OCR coverage')).toHaveValue('auto');
+  await expect(page.getByTestId('reading')).toContainText('VECTOR TEXT 7429');
+  await expect(page.locator('.images-panel')).toContainText('no embedded raster images');
+  await expect(page.getByRole('complementary', { name: 'Whole-page OCR suggestion' })).toHaveCount(
+    0,
+  );
+  // Without OCR the page is empty, and the demo offers whole-page recognition.
+  await page.getByLabel('Recognize scanned text (OCR)').uncheck();
+  await page.getByRole('button', { name: 'Extract again' }).click();
   await expect(page.getByRole('status').first()).toContainText('Extraction complete');
   await expect(page.locator('.result-summary')).toContainText('0 text characters');
-  await expect(page.locator('.images-panel')).toContainText('no embedded raster images');
   await expect(
     page.getByRole('complementary', { name: 'Whole-page OCR suggestion' }),
   ).toBeVisible();
@@ -279,6 +292,43 @@ test('TABLE-01: table detection is off by default and shows tables when enabled'
   await expect(table.locator('figcaption')).toContainText('3 × 3 · ruling lines');
   await expect(table.locator('tr')).toHaveCount(3);
   await expect(table.locator('tr').nth(1).locator('td')).toHaveText(['Bolt', '12', '0.40']);
+});
+
+test('MD-01: Markdown view, headings, running headers and footers, and LaTeX math', async ({
+  page,
+}) => {
+  await page.goto('./');
+  await expect(page.getByLabel('Write TeX formulas as LaTeX')).not.toBeChecked();
+  await page.getByLabel('Recognize scanned text (OCR)').check();
+  await expect(page.getByLabel('Minimum word confidence')).toHaveValue('0.3');
+  await page.getByLabel('Recognize scanned text (OCR)').uncheck();
+  const file = { name: 'structure.pdf', mimeType: 'application/pdf', buffer: structureFixture() };
+  await page.locator('#pdf-file').setInputFiles(file);
+  await expect(page.getByRole('status').first()).toContainText('Extraction complete');
+  await expect(page.locator('.result-summary')).toContainText('1 heading');
+  await expect(page.locator('.result-summary')).toContainText('2 header, footer or margin blocks');
+  await page.getByRole('button', { name: 'Markdown', exact: true }).click();
+  const markdown = page.getByTestId('markdown');
+  await expect(markdown).toContainText('# Results');
+  await expect(markdown).toContainText('Journal of Demo Studies 3');
+  await expect(markdown).not.toContainText('$');
+  await page.getByLabel('Leave out running headers and footers').check();
+  await expect(markdown).not.toContainText('Journal of Demo Studies');
+  await page.getByLabel('Write TeX formulas as LaTeX').check();
+  await page.getByRole('button', { name: 'Extract again' }).click();
+  await expect(page.getByRole('status').first()).toContainText('Extraction complete');
+  await expect(markdown).toContainText('where $x_{i}$ is positive and $\\frac{1}{n}$ is small.');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download Markdown' }).click();
+  const path = await (await download).path();
+  if (!path) throw new Error('Missing downloaded Markdown file');
+  const text = await readFile(path, 'utf8');
+  expect(text).toContain('# Results');
+  expect(text).toContain('$\\frac{1}{n}$');
+  expect(text).not.toContain('Journal of Demo Studies');
+  await page.getByRole('button', { name: 'Structure', exact: true }).click();
+  await expect(page.locator('.structure summary').first()).toContainText('Running header');
+  await expect(page.locator('.structure summary').nth(1)).toContainText('Heading 1');
 });
 
 test('COMP-01: composite images are off by default and include overlays when enabled', async ({

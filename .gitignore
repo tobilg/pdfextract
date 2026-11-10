@@ -156,6 +156,7 @@ plans/
 
 # pdfextract generated local outputs
 artifacts/
+.bench/
 test-results/
 playwright-report/
 pdf-assets/

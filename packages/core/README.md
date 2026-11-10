@@ -53,16 +53,84 @@ and derived fullText. `errorMode: 'collect'` retains partial results with diagno
 the default throws. Results round-trip through JSON. Page numbers are one-based.
 
 Coordinates are points (1/72 inch), top-left origin, x right/y down, with CropBox,
-UserUnit and page rotation applied. `rotation` records PDF rotation. Text order uses
-deterministic baseline rows, gutters and paragraph spacing, not semantic reconstruction.
-Reading order for overlapping layouts, bidirectional/vertical scripts, or rotated
-multi-column content needs application review.
+UserUnit and page rotation applied. `rotation` records PDF rotation. Text order uses a
+deterministic recursive XY-cut: columns are read one after another, and headings, headers
+or captions that span the gutter are read in their own place. A gutter is followed through
+the rows it runs through, so columns below a title or beside a sidebar are found too, and
+on past a scan's drift or around a figure set between the columns. Narrow gutters split only
+running text, and in a scan's text layer, whose word gaps can be as wide as a gutter, only
+where they run through several lines. OCR words keep the lines the recognizer found. Accents
+drawn apart from their letters join them, and letter-spaced runs are read again from their
+glyphs. This is not semantic reconstruction: reading order for overlapping
+layouts, bidirectional/vertical scripts, or rotated multi-column content needs application
+review.
 
 Tables are detected from ruling lines and aligned text columns and returned in
 `page.tables` as rows, columns and cells (with merged cells for ruled grids). Each table
 is also one text block that reads row by row with tab-separated cells. Pass
 `tables: false` to skip detection. See the
 [tables guide](../documentation/guides/tables.md) for the heuristics and their limits.
+
+Headings carry `headingLevel` (1 for the largest type on the page): short lines set larger
+than the page's body text, or bold where it is not, and lines that only name a conventional
+section ("Contents", "References"); running headers and footers, leaders, numbered
+captions, dates, links, numbers, lines with tab-separated parts and lines within a sentence
+are excluded. Spans report the PDF font name, such as `Helvetica-Bold`. Structure is
+heuristic, not read from tagged PDF.
+
+Running headers and footers (journal lines, running titles, page numbers, copyright and
+download notices) carry `furniture: 'header' | 'footer'`: blocks in the top or bottom 15% of
+the page that are short and set apart from the text, and text repeated at the same height
+across the extracted pages. Stamps set at a quarter turn along a side edge carry
+`furniture: 'margin'`. Body text near an edge (a paragraph continued from the previous page, a
+full-width line unless it cites the publication, a caption, a footnote, a heading) is not
+marked. The blocks stay in the text. Line numbers printed beside the text (a manuscript's
+numbered lines, a patent's 5, 10, 15 in the gutter) are left out of it.
+
+`toMarkdown(result)` renders headings as `#` lines, tables as pipe tables (as HTML tables
+where cells merge, which pipe tables cannot show; `tables: 'pipe' | 'html'` chooses one
+syntax) and other blocks as paragraphs, with pages separated by a thematic break
+(`pageSeparator` changes it). Paragraphs are written on one line each, with words
+hyphenated at a line end rejoined (`lines: 'preserve'` keeps the page's lines).
+`furniture: false` leaves running headers and footers out, as for a model or a search
+index. It works on any result, including one restored from JSON:
+
+```ts
+import { openPdf, toMarkdown } from '@pdfextract/core';
+
+const markdown = toMarkdown(await pdf.getStructuredText());
+const body = toMarkdown(await pdf.getStructuredText(), { furniture: false });
+```
+
+On pages typeset with TeX (papers from LaTeX, arXiv preprints), `math: 'latex'` rebuilds
+formulas from their glyphs and puts them in the text as `$…$` LaTeX: math fonts (Computer
+Modern, AMS, Latin Modern, tx/px, mathabx, Euler, rsfs, OpenType math fonts such as STIX Two
+Math) and TeX's encodings give the symbols, glyph size and baseline the sub- and superscripts,
+thin rules the fractions, roots and overlines, and centred script rows the limits of sums and
+integrals; operator names beside them join them. Text around a formula keeps its own spans.
+Formulas with structure plain text cannot show or of three glyphs or more become LaTeX, so a
+lone `±` or Greek letter stays text; pages without math fonts are unaffected, and others cost
+one more glyph scan. No model is involved, and math drawn as images or vector outlines, or set
+in text fonts only, is not read:
+
+```ts
+const markdown = toMarkdown(await pdf.getStructuredText({ math: 'latex' }));
+// … where $x_{i}\in \mathbb{R}^{n}$ and $\sum_{i=1}^{n}x_{i}=1$ …
+```
+
+With OCR, `auto` recognizes embedded images, except those that native text already covers
+(backgrounds, watermarks) and scans under a text layer that reads cleanly; a scan under a
+poor layer (debris of an earlier recognition) is recognized again, and the new words replace
+the layer where they read clearly better. On a page with no native text that
+is drawn with many vector shapes (outlined lettering), the rendered page. Recognized words
+below `minOcrConfidence` (default 0.3; 0 keeps all) are dropped, and words that repeat
+overlapping native text, including close misreadings, are not added. Any `OcrProvider` can
+recognize: rasters carry their effective `dpi` when known and `layout: 'sparse'` when core
+asks for scattered words (a page that yielded no text otherwise), and a provider reporting
+`concurrency` above one gets that many pages at once.
+
+The [text and Markdown guide](../documentation/guides/text-and-markdown.md)
+describes reading order, headings, furniture, Markdown and math in more detail.
 
 ## Embedded images
 

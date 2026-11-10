@@ -33,19 +33,23 @@ export async function exactExport(
     data: new Uint8Array(source.encoded),
   };
 }
-/** The occurrence's raster as upright RGBA, as the placement shows it, for OCR. */
+/**
+ * The occurrence's raster as upright RGBA, as the placement shows it, for OCR; resized by
+ * `scale` in the worker (bilinear enlargement above 1, area-average reduction below).
+ */
 export async function uprightRaster(
   engine: Engine,
   limits: Required<PdfLimits>,
   location: ImageLocation,
   occurrence: ImageOccurrence,
+  scale = 1,
 ): Promise<OcrRaster> {
   const raw = await engine.decode(
     location.pageIndex,
     location.rawId,
     limits.maxImagePixels,
     limits.maxDecodedBytes,
-    { orient: axes(occurrence) },
+    { orient: axes(occurrence), ...(scale !== 1 ? { scale } : {}) },
   );
   return {
     data: new Uint8Array(raw.pixels),

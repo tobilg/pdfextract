@@ -23,7 +23,6 @@ import { createTesseractOcr } from '@pdfextract/ocr';
 
 const ocr = createTesseractOcr({
   languages: ['eng'],
-  concurrency: 1,
   assets: { languageDataBaseUrl: new URL('./models/', import.meta.url) },
 });
 try {
@@ -46,7 +45,10 @@ whole `File` to core and configure all worker/model URLs using the
 ## Lifecycle
 
 The factory is synchronous and performs no initialization/download. First recognition
-loads a reusable worker. Concurrency defaults to 1, configurable 1–8. The caller owns
+loads a reusable worker. Concurrency defaults to half the logical processors, from one to
+four, configurable 1–8; a further worker starts only when rasters overlap, and core then
+reads as many pages at once. Each worker holds its own Tesseract instance: set
+`concurrency: 1` where memory is tight. The caller owns
 the provider: multiple PDFs may share it, and closing one PDF does not terminate it.
 `close()` is idempotent; cancellation terminates a running or initializing worker.
 Missing models reject with `OCR_ASSET_UNAVAILABLE`, not a pending initialization promise.
@@ -69,9 +71,22 @@ cross-origin-isolation headers are required.
 ## Recognition and errors
 
 The provider accepts tightly packed RGBA8, returns pixel-coordinate words/lines and
-confidence in [0,1]. It uses no automatic rotation/resizing; core maps recognition
-geometry through its own preprocessing. `auto` in core visits image regions even on
-pages containing native text. `always` uses a bounded full-page working raster.
+confidence in [0,1]. It recognizes a grayscale copy composited over white, because
+Tesseract's per-channel thresholding of colour images can lose coloured text. It runs
+Tesseract's automatic page segmentation (PSM 3, as the `tesseract` CLI does, rather than
+the library's single-block default) and passes the raster's `dpi`, when core supplies it,
+as the source resolution. On pages larger than any paper, whose geometry may say little
+about the scan, an image that yields no words is read once more without it, and
+Tesseract estimates the resolution. A raster marked `layout: 'sparse'` (core asks for it
+when a page yielded no text at all) is read in sparse-text mode (PSM 11). It uses no
+automatic rotation/resizing; core prepares the working raster and maps recognition
+geometry back through its own preprocessing. `auto` in core
+visits image regions even on pages containing native text (not images that native text
+covers by 30% or more, such as backgrounds and watermarks), enlarging regions shown below
+200 DPI toward 300 DPI, and renders a page without native text that is drawn with many
+vector shapes (outlined lettering). `always` renders every page at up to 300 DPI. Both stay
+within `maxOcrPixels`; a larger image is reduced to fit it. Core drops words below its
+`minOcrConfidence` option (default 0.3).
 Native text wins overlapping normalized matching words; distinct placements remain.
 Automatic detection of arbitrary page layouts/languages or guaranteed OCR accuracy is
 not claimed. Test thresholds require the known English/German sentinel words and geometry.

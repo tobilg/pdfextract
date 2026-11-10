@@ -8,3 +8,5 @@ export function tableFixture(): Buffer<ArrayBuffer>;
 export function overlayFixture(): Buffer<ArrayBuffer>;
 /** Generate a page showing text before any font is set, with a clipped image, and an intact page. */
 export function brokenTextFixture(): Buffer<ArrayBuffer>;
+/** Generate an original TeX-like page with a running header, a page number, a heading and formulas. */
+export function structureFixture(): Buffer<ArrayBuffer>;

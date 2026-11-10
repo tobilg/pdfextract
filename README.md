@@ -12,7 +12,7 @@ extraction service, CDN or model download is used, and nothing starts a worker o
 
 | Package | Purpose |
 | --- | --- |
-| [`@pdfextract/core`](packages/core/README.md) | `openPdf`: structured text with coordinates, table detection, embedded-image inventory and lossless PNG export |
+| [`@pdfextract/core`](packages/core/README.md) | `openPdf`: structured text with coordinates in reading order, table and heading detection, running headers and footers, LaTeX math, Markdown via `toMarkdown`, embedded-image inventory and lossless PNG export |
 | [`@pdfextract/ocr`](packages/ocr/README.md) | `createTesseractOcr`: lazy, self-hosted Tesseract OCR provider for core |
 | [`@pdfextract/storage`](packages/storage/README.md) | `/filesystem` and `/s3` adapters with `put/get/head/delete` |
 
@@ -29,12 +29,13 @@ npm install @aws-sdk/client-s3
 ## Usage
 
 ```ts
-import { openPdf } from '@pdfextract/core';
+import { openPdf, toMarkdown } from '@pdfextract/core';
 
 const pdf = await openPdf(fileOrBlobOrBuffer);
 try {
   const text = await pdf.getStructuredText({ ocr: 'off' });
   console.log(text.fullText);
+  console.log(toMarkdown(text)); // # headings and | tables |, inferred from the layout
   for (const image of await pdf.getImages()) {
     const full = await pdf.extractImage(image.id);
     const thumbnail = await pdf.extractImage(image.id, { maxWidth: 320, maxHeight: 240 });
@@ -43,6 +44,15 @@ try {
 } finally {
   await pdf.close();
 }
+```
+
+Pages are read column after column. Blocks carry their inferred `headingLevel` and, for
+running headers and footers, `furniture`. On papers typeset with TeX, `math: 'latex'` writes
+formulas as `$…$` LaTeX rebuilt from their glyphs, without a model:
+
+```ts
+const text = await pdf.getStructuredText({ math: 'latex' });
+const markdown = toMarkdown(text, { furniture: false }); // without running headers and footers
 ```
 
 To skip small images such as icons, pass a minimum size. Images are measured as they are
@@ -69,6 +79,7 @@ packaged engine, worker and OCR assets themselves; see the
 More documentation (also on the [documentation site](https://pdfextract-api-docs.gh.tobilg.com)):
 
 - [Getting started](packages/documentation/guides/getting-started.md)
+- [Text and Markdown](packages/documentation/guides/text-and-markdown.md)
 - [OCR and self-hosted assets](packages/documentation/guides/ocr-and-assets.md)
 - [Storage and persistence](packages/documentation/guides/storage.md)
 - [Coordinates and resource limits](packages/documentation/guides/coordinates-and-limits.md)
@@ -158,6 +169,28 @@ consumer, checks declarations, runs real Node extraction/OCR and builds the brow
 consumer under a non-root base path. Set `PDFEXTRACT_NODE22=/path/to/node-v22.12.0/bin/node`
 to also run the Node smoke test on the minimum supported version.
 [CI notes](.github/CI.md) describe what the GitHub workflow covers.
+
+### Quality benchmarks
+
+`pnpm benchmark` measures speed and memory on the test fixtures. Extraction quality is
+measured on two public benchmarks, opendataloader-bench and olmOCR-bench, with liteparse as
+the reference engine; corpora, scorers and Python packages are pinned, so a commit always
+scores the same:
+
+```sh
+pnpm bench:download   # corpora and scorer (about 750 MB, into .bench/)
+pnpm bench:setup      # Python environment and build
+pnpm bench odl        # or: pnpm bench olmocr [--groups table_tests]
+```
+
+At 0.4.0, against liteparse 2.18.0 as the reference:
+
+| Benchmark | pdfextract | liteparse |
+| --- | --- | --- |
+| olmOCR-bench (mean pass rate of its test files; Markdown, LaTeX math) | 61.8% | 45.3% |
+| opendataloader-bench (overall: reading order, tables, headings) | 0.923 | 0.895 |
+
+See [benchmarks/README.md](benchmarks/README.md) for options, comparisons and baselines.
 
 ## Releasing
 

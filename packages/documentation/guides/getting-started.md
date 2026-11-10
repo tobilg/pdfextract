@@ -29,7 +29,33 @@ controls the lifetime of the resulting bytes.
 The document's four operations are `getStructuredText`, `getImages`, `extractImage`
 and `close`. The structured result includes pages, blocks, lines, spans, provenance,
 warnings and derived `fullText`. It round-trips through JSON. Detected tables are listed
-per page in `tables` and read row by row in the text; see [Tables](tables.md).
+per page in `tables` and read row by row in the text; see [Tables](tables.md). Blocks
+inferred to be headings carry a `headingLevel`.
+
+For Markdown, with `#` headings, pipe tables and one line per paragraph, render any
+structured result:
+
+```ts
+import { toMarkdown } from '@pdfextract/core';
+
+const markdown = toMarkdown(await pdf.getStructuredText());
+```
+
+Blocks recognized as running headers and footers carry `furniture: 'header' | 'footer'`, and
+stamps set at a quarter turn along a side edge `furniture: 'margin'`;
+`toMarkdown(result, { furniture: false })` leaves them out. Line numbers printed beside the
+text (manuscripts, patents) are left out of the text. `lines: 'preserve'` keeps the page's
+lines, and `tables: 'pipe' | 'html'` writes every table one way.
+
+For papers typeset with TeX, `math: 'latex'` writes formulas as `$…$` LaTeX rebuilt from
+their glyphs (scripts, fractions, roots, accents, limits); other pages are unaffected:
+
+```ts
+const markdown = toMarkdown(await pdf.getStructuredText({ math: 'latex' }));
+```
+
+[Text and Markdown](text-and-markdown.md) explains the reading order, headings,
+running headers and footers, the Markdown rendering and LaTeX math, with their limits.
 
 `getImages` lists every embedded image by default. To skip icons and other small images,
 pass a minimum size; the returned list reports how many images were left out:

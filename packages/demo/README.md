@@ -14,12 +14,15 @@ pnpm demo:dev
 ```
 
 Open **http://127.0.0.1:4176/**. Choose or drop a PDF. Enable OCR before extraction to
-recognize English or German scans, including images on mixed-content pages. Supply a
-password for encrypted PDFs. Change options and select **Extract again** to retry.
+recognize English or German scans, including images on mixed-content pages, and choose the
+**Minimum word confidence** below which recognized words are dropped (30% by default).
+Supply a password for encrypted PDFs. Change options and select **Extract again** to retry.
 
-The default OCR coverage reads **embedded image regions**. Choose **Whole pages
-(including vector text)** for diagrams whose lettering is drawn as paths. If extraction
-finds no text or embedded images, the demo offers **Recognize whole pages** directly.
+The default OCR coverage, **Automatic**, reads embedded image regions, and whole pages
+that have no font text but are drawn with many vector shapes (outlined lettering). Choose
+**Whole pages (including vector text)** to recognize every page, for example diagrams that
+mix font text with lettering drawn as paths. If extraction without OCR finds no text or
+embedded images, the demo offers **Recognize whole pages** directly.
 Some schematic/CAD exports contain neither font text nor raster objects; opening them
 successfully can therefore yield empty native results. OCR uses a temporary page raster
 for recognition only. The embedded-image list remains empty, and no screenshot is
@@ -38,10 +41,18 @@ and WebKit, without Vite transforms or workspace source aliases.
 
 ## What the demo does
 
-- Reads a whole File and shows native/OCR text, page dimensions, blocks, lines, span
-  geometry, provenance, confidence, warnings and page JSON. Download full structured
-  JSON or plain text. The warnings panel also lists image-list warnings, such as pages
-  whose broken content was read leniently (`IMAGE_INVENTORY_DEGRADED`).
+- Reads a whole File and shows native/OCR text in reading order, page dimensions, blocks,
+  lines, span geometry, provenance, confidence, warnings and page JSON. The **Structure**
+  view marks headings (by level) and running headers, footers and margin stamps, and the
+  summary counts them. Download full structured JSON, plain text or Markdown. The warnings
+  panel also lists image-list warnings, such as pages whose broken content was read
+  leniently (`IMAGE_INVENTORY_DEGRADED`).
+- The **Markdown** view shows the current page as `toMarkdown` writes it, with its options:
+  leave out running headers and footers, keep the page's lines, and the table syntax (pipe
+  tables, HTML where cells merge, or one of them throughout). **Download Markdown** writes
+  every page with the same options.
+- **Write TeX formulas as LaTeX** (off by default) extracts with `math: 'latex'`: formulas
+  on pages typeset with TeX appear as `$…$` LaTeX in the text and the Markdown.
 - Optional minimum image width/height (pixels) skips smaller images; the result summary
   shows how many were ignored. Empty fields list every image.
 - **Detect tables** (off by default) runs table detection: the summary and page details
@@ -113,8 +124,8 @@ release has published the npm packages.
 
 ## Validation mapping
 
-`tests/demo.spec.ts` exercises E2E-01, CORE-02/03/04, OCR-01/02/05, IMG-01/02/04 and PERF-02
-using the existing real fixtures and independent alpha pixels. Checks include structured
+`tests/demo.spec.ts` exercises E2E-01, CORE-02/03/04, OCR-01/02/05, IMG-01/02/04, MD-01 and
+PERF-02 using the existing real fixtures and independent alpha pixels. Checks include structured
 downloads, native-size full images, same-origin OCR, cancellation/recovery, URL cleanup,
 fresh-session reset and mobile layout. Fixture provenance remains in the workspace's
 local `docs/fixtures.md`; this package generates no synthetic extraction output.
@@ -127,4 +138,7 @@ paths on two pages using the bundled Liberation Sans font (SIL Open Font License
 It embeds neither fonts nor images. CORE-02/OCR-01/OCR-05 checks verify an initially
 empty result, the whole-page OCR recovery action, real recognition on both pages and
 an unchanged empty image inventory in all three browsers. The user's schematic is
-not redistributed as a fixture.
+not redistributed as a fixture. MD-01 uses an original page set like a TeX paper (fonts
+named like Computer Modern, a fraction bar drawn as an image mask) with a running header,
+a heading and a page number, and checks the Markdown view, its options and download, the
+structure markers and LaTeX math.

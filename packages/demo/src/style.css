@@ -613,3 +613,28 @@ footer {
   font-size: 0.85rem;
   font-weight: 600;
 }
+
+.markdown-options {
+  margin: 0 0 8px;
+  gap: 10px 20px;
+}
+.markdown-note {
+  margin: 0 0 10px;
+}
+.markdown-view {
+  padding: 20px;
+  background: white;
+  border: 1px solid #e0e5e8;
+  border-radius: 6px;
+  max-height: 850px;
+  overflow: auto;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.block-badge {
+  margin-left: 8px;
+  font-size: 0.72rem;
+  vertical-align: middle;
+}
